@@ -1,0 +1,10 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16 
+    container_name: gomento-pg
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: gomento
+    ports:
+      - "5432:5432"
