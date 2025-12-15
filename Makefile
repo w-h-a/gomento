@@ -21,3 +21,19 @@ go-build:
 .PHONY: go-install
 go-install:
 	go install
+
+DB_URL=postgres://user:password@localhost:5432/gomento?sslmode=disable
+
+.PHONY: migrate-up migrate-down migrate-new
+
+migrate-up:
+	migrate -path db/migrations -database "$(DB_URL)" up
+
+migrate-down:
+	migrate -path db/migrations -database "$(DB_URL)" down 1
+
+migrate-new:
+	migrate create -ext sql -dir db/migrations -seq $(name)
+
+pg-connect:
+	docker exec -it gomento-pg psql -U user -d gomento

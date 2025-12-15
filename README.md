@@ -30,7 +30,6 @@ graph TD
 
     subgraph "Infrastructure"
         Postgres[Postgres + pgvector]
-        S3[S3/MinIO]
         LLM[LLM Provider]
     end
 
@@ -41,12 +40,60 @@ graph TD
     Worker -- "4. Distill (Extract SOP)" --> LLM
     LLM -- "5. Return Structured Skill" --> Worker
     Worker -- "6. Save Skill/Vector" --> Postgres
-    Worker -- "7. Archive Raw Logs" --> S3
 
     %% Flow 2: Retrieval
-    Agent -- "8. Ask: 'How do I fix Redis?'" --> API
-    API -- "9. Vector Search" --> Postgres
-    Postgres -- "10. Return SOP" --> API
-    API -- "11. Return Context" --> Agent
+    Agent -- "7. Ask: 'How do I fix Redis?'" --> API
+    API -- "8. Vector Search" --> Postgres
+    Postgres -- "9. Return SOP" --> API
+    API -- "10. Return Context" --> Agent
+```
 
+### ER Diagram
+
+```mermaid
+erDiagram
+    PROJECTS {
+        UUID id PK
+        TEXT name
+        TIMESTAMPTZ created_at
+    }
+
+    SPACES {
+        UUID id PK
+        UUID project_id FK
+        TEXT name
+        TIMESTAMPTZ created_at
+    }
+
+    SKILLS {
+        UUID id PK
+        UUID space_id FK
+        TEXT trigger "The problem summary"
+        TEXT sop "The solution steps"
+        VECTOR embedding "pgvector(1536)"
+        TIMESTAMPTZ created_at
+    }
+
+    SESSIONS {
+        UUID id PK
+        UUID project_id FK
+        UUID space_id FK "Nullable"
+        TIMESTAMPTZ created_at
+    }
+
+    MESSAGES {
+        UUID id PK
+        UUID session_id FK
+        VARCHAR role "'user' or 'assistant'"
+        TEXT content
+        TIMESTAMPTZ created_at
+    }
+
+    PROJECTS ||--|{ SPACES : "for every project there are 1 to many spaces"
+    PROJECTS ||--|{ SESSIONS : "for every project there are 1 to many sessions"
+    
+    SPACES ||--|{ SKILLS : "for every space there are 1 to many skills"
+    SPACES |o--o{ SESSIONS : "for every session there is 0 or 1 space; for every space there are 0 or more sessions"
+    
+    SESSIONS ||--|{ MESSAGES : "for every session there are 1 to many messages"
 ```
