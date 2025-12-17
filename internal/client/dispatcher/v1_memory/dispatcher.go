@@ -18,27 +18,27 @@ type v1MemDispatcher struct {
 	once    sync.Once
 }
 
-func (b *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, task *v1.Task) error, opts ...dispatcher.SubscribeOption) error {
+func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, task *v1.Task) error, opts ...dispatcher.SubscribeOption) error {
 	options := dispatcher.NewSubscribeOptions(opts...)
 
 	// span
 	slog.InfoContext(ctx, "subscribing to queue", "queue", options.Queue)
 
-	b.mtx.Lock()
-	q, ok := b.queues[options.Queue]
+	d.mtx.Lock()
+	q, ok := d.queues[options.Queue]
 	if !ok {
 		q = make(chan *v1.Task, 100)
-		b.queues[options.Queue] = q
+		d.queues[options.Queue] = q
 	}
-	b.mtx.Unlock()
+	d.mtx.Unlock()
 
-	b.wg.Add(1)
+	d.wg.Add(1)
 	go func() {
-		defer b.wg.Done()
+		defer d.wg.Done()
 
 		for {
 			select {
-			case <-b.exit:
+			case <-d.exit:
 				return
 			case data := <-q:
 				if err := cb(context.Background(), data); err != nil {
@@ -52,19 +52,19 @@ func (b *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Con
 	return nil
 }
 
-func (b *v1MemDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...dispatcher.PublishOption) error {
+func (d *v1MemDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...dispatcher.PublishOption) error {
 	options := dispatcher.NewPublishOptions(opts...)
 
 	// span
 	slog.InfoContext(ctx, "publishing to queue", "data", task, "queue", options.Queue)
 
-	b.mtx.Lock()
-	q, ok := b.queues[options.Queue]
+	d.mtx.Lock()
+	q, ok := d.queues[options.Queue]
 	if !ok {
 		q = make(chan *v1.Task, 100)
-		b.queues[options.Queue] = q
+		d.queues[options.Queue] = q
 	}
-	b.mtx.Unlock()
+	d.mtx.Unlock()
 
 	select {
 	case q <- task:
@@ -74,18 +74,18 @@ func (b *v1MemDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...di
 	}
 }
 
-func (b *v1MemDispatcher) CheckHealth(ctx context.Context) error {
+func (d *v1MemDispatcher) CheckHealth(ctx context.Context) error {
 	return nil
 }
 
-func (b *v1MemDispatcher) Close(ctx context.Context) error {
+func (d *v1MemDispatcher) Close(ctx context.Context) error {
 	done := make(chan struct{})
 
-	b.once.Do(func() {
-		close(b.exit)
+	d.once.Do(func() {
+		close(d.exit)
 
 		go func() {
-			b.wg.Wait()
+			d.wg.Wait()
 			close(done)
 		}()
 	})
@@ -98,14 +98,14 @@ func (b *v1MemDispatcher) Close(ctx context.Context) error {
 	}
 }
 
-func (b *v1MemDispatcher) Queue(name string) <-chan *v1.Task {
-	b.mtx.Lock()
-	defer b.mtx.Unlock()
+func (d *v1MemDispatcher) Queue(name string) <-chan *v1.Task {
+	d.mtx.Lock()
+	defer d.mtx.Unlock()
 
-	q, ok := b.queues[name]
+	q, ok := d.queues[name]
 	if !ok {
 		q = make(chan *v1.Task, 100)
-		b.queues[name] = q
+		d.queues[name] = q
 	}
 
 	return q
@@ -114,7 +114,7 @@ func (b *v1MemDispatcher) Queue(name string) <-chan *v1.Task {
 func NewDispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
 	options := dispatcher.NewOptions(opts...)
 
-	b := &v1MemDispatcher{
+	d := &v1MemDispatcher{
 		options: options,
 		queues:  map[string]chan *v1.Task{},
 		mtx:     sync.RWMutex{},
@@ -123,5 +123,5 @@ func NewDispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
 		once:    sync.Once{},
 	}
 
-	return b
+	return d
 }
