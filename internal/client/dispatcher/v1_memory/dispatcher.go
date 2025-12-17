@@ -111,7 +111,7 @@ func (d *v1MemDispatcher) Queue(name string) <-chan *v1.Task {
 	return q
 }
 
-func NewDispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
+func NewV1Dispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
 	options := dispatcher.NewOptions(opts...)
 
 	d := &v1MemDispatcher{
