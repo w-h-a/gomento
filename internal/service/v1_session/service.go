@@ -1,4 +1,4 @@
-package session
+package v1session
 
 import (
 	"context"

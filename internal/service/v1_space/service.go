@@ -1,4 +1,4 @@
-package project
+package v1space
 
 import (
 	"context"
@@ -14,12 +14,13 @@ type V1Service struct {
 	persister persister.V1Persister
 }
 
-func (s *V1Service) Create(ctx context.Context, name string) (*v1.Project, error) {
-	p := &v1.Project{
-		Id:   uuid.New(),
-		Name: name,
+func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, name string) (*v1.Space, error) {
+	p := &v1.Space{
+		Id:        uuid.New(),
+		ProjectId: projectId,
+		Name:      name,
 	}
-	if err := s.persister.CreateProject(ctx, p); err != nil {
+	if err := s.persister.CreateSpace(ctx, p); err != nil {
 		return nil, err
 	}
 	return p, nil

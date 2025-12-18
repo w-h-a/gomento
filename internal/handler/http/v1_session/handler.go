@@ -1,4 +1,4 @@
-package session
+package v1session
 
 import (
 	"encoding/json"
@@ -8,12 +8,12 @@ import (
 	"github.com/gorilla/mux"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
-	"github.com/w-h-a/gomento/internal/service/session"
+	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	"github.com/w-h-a/gomento/internal/util"
 )
 
 type v1Handler struct {
-	service *session.V1Service
+	service *v1session.V1Service
 }
 
 func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
-func NewV1Handler(s *session.V1Service) *v1Handler {
+func NewV1Handler(s *v1session.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,
 	}
