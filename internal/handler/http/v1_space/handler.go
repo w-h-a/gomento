@@ -1,4 +1,4 @@
-package space
+package v1space
 
 import (
 	"encoding/json"
@@ -6,12 +6,12 @@ import (
 
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
-	"github.com/w-h-a/gomento/internal/service/space"
+	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 	"github.com/w-h-a/gomento/internal/util"
 )
 
 type v1Handler struct {
-	service *space.V1Service
+	service *v1space.V1Service
 }
 
 func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +36,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusCreated, s)
 }
 
-func NewV1Handler(s *space.V1Service) *v1Handler {
+func NewV1Handler(s *v1space.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,
 	}
