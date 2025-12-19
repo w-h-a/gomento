@@ -21,15 +21,23 @@ func TestAddMessage_PersistsToSessionHistory(t *testing.T) {
 	sessionId := uuid.New()
 	ctx := context.Background()
 
+	input := v1session.SendMessageInput{
+		SessionId: sessionId,
+		Role:      "user",
+		Parts: []v1session.PartInput{
+			{Type: "text", Text: "Hello World"},
+		},
+	}
+
 	// Act
-	err := s.AddMessage(ctx, sessionId, "user", "Hello World")
+	err := s.AddMessage(ctx, input)
 	require.NoError(t, err)
 
 	// Assert: State
 	msgs, err := p.GetMessages(ctx, sessionId)
 	assert.NoError(t, err)
 	assert.Len(t, msgs, 1)
-	assert.Equal(t, "Hello World", msgs[0].Content)
+	assert.Equal(t, "Hello World", msgs[0].Parts[0].Text)
 	assert.Equal(t, "user", msgs[0].Role)
 }
 

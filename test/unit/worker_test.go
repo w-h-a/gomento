@@ -45,15 +45,41 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = p.AddMessage(ctx, &v1.Message{SessionId: sessionId, Role: "user", Content: "nginx is broken"})
+	err = p.CreateMessageWithAssets(
+		ctx,
+		&v1.Message{
+			SessionId: sessionId,
+			Role:      "user",
+			Parts: []v1.Part{
+				{
+					Type: "text",
+					Text: "nginx is broken",
+				},
+			},
+		},
+		[]*v1.Asset{},
+	)
 	require.NoError(t, err)
 
-	err = p.AddMessage(ctx, &v1.Message{SessionId: sessionId, Role: "assistant", Content: "try restarting it"})
+	err = p.CreateMessageWithAssets(
+		ctx,
+		&v1.Message{
+			SessionId: sessionId,
+			Role:      "assistant",
+			Parts: []v1.Part{
+				{
+					Type: "text",
+					Text: "try restarting it",
+				},
+			},
+		},
+		[]*v1.Asset{},
+	)
 	require.NoError(t, err)
 
 	task := &v1.Task{
 		Type: v1.TaskTypeDistill,
-		Payload: map[string]interface{}{
+		Payload: map[string]any{
 			"session_id": sessionId.String(),
 		},
 	}

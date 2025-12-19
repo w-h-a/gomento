@@ -74,7 +74,7 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 	return nil, nil
 }
 
-func (p *v1MockPersister) AddMessage(ctx context.Context, msg *v1.Message) error {
+func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets []*v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
