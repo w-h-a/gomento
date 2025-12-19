@@ -9,10 +9,15 @@ import (
 )
 
 type v1MockDistiller struct {
-	options distiller.Options
+	options  distiller.Options
+	skillRsp *v1.Skill
 }
 
 func (d *v1MockDistiller) Distill(ctx context.Context, history []v1.Message) (*v1.Skill, error) {
+	if d.skillRsp != nil {
+		return d.skillRsp, nil
+	}
+
 	embedding := make([]float32, 1536)
 	embedding[0] = 0.01
 
@@ -29,6 +34,10 @@ func NewV1Distiller(opts ...distiller.Option) *v1MockDistiller {
 
 	d := &v1MockDistiller{
 		options: options,
+	}
+
+	if rsp, ok := SkillRspFrom(options.Context); ok {
+		d.skillRsp = rsp
 	}
 
 	return d
