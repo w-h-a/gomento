@@ -19,7 +19,7 @@ Coming soon!
 ```mermaid
 graph TD
     subgraph "Your Runtime"
-        User[User] <-->|Chat| Agent[Your Agent]
+        User[User] <-->|Chat + Files| Agent[Your Agent]
     end
 
     subgraph "GoMento"
@@ -30,22 +30,28 @@ graph TD
 
     subgraph "Infrastructure"
         Postgres[Postgres + pgvector]
+        MinIO[MinIO/S3]
         LLM[LLM Provider]
     end
 
     %% Flow 1: Storing Context
-    Agent -- "1. Push chat logs" --> API
-    API -- "2. Produce Task" --> Queue
-    Queue -- "3. Consume Task" --> Worker
-    Worker -- "4. Distill (Extract SOP)" --> LLM
-    LLM -- "5. Return Structured Skill" --> Worker
-    Worker -- "6. Save Skill/Vector" --> Postgres
+    Agent -- "1. Push Chat Logs & Files" --> API
+    API -- "2. Upload File" --> MinIO
+    MinIO -- "3. Return URL/Key" --> API
+    API -- "4. Save Metadata" --> Postgres
+    API -- "5. Produce Task" --> Queue
+    
+    %% Flow 2: Distillation
+    Queue -- "6. Consume" --> Worker
+    Worker -- "7. Distill (Extract SOP)" --> LLM
+    LLM -- "8. Return Structured Skill" --> Worker
+    Worker -- "9. Save Skill/Vector" --> Postgres
 
-    %% Flow 2: Retrieval
-    Agent -- "7. Ask: 'How do I fix Redis?'" --> API
-    API -- "8. Vector Search" --> Postgres
-    Postgres -- "9. Return SOP" --> API
-    API -- "10. Return Context" --> Agent
+    %% Flow 3: Retrieval
+    Agent -- "10. Ask: 'How do I fix Redis?'" --> API
+    API -- "11. Vector Search" --> Postgres
+    Postgres -- "12. Return SOP" --> API
+    API -- "13. Return Context" --> Agent
 ```
 
 ### ER Diagram
@@ -85,15 +91,32 @@ erDiagram
         UUID id PK
         UUID session_id FK
         VARCHAR role "'user' or 'assistant'"
-        TEXT content
+        JSONB parts "replaces 'content'. Stores [{'type':'text'}, {'type':'image'}]"
         TIMESTAMPTZ created_at
     }
 
-    PROJECTS ||--|{ SPACES : "for every project there are 1 to many spaces"
-    PROJECTS ||--|{ SESSIONS : "for every project there are 1 to many sessions"
+    ASSETS {
+        UUID id PK
+        TEXT bucket "MinIO Bucket"
+        TEXT s3_key "Path to file in S3"
+        TEXT mime "e.g. image/png"
+        BIGINT size_bytes
+        TEXT sha256 "Deduplication hash"
+    }
+
+    MESSAGE_ASSETS {
+        UUID message_id PK, FK
+        UUID asset_id PK, FK
+    }
+
+    PROJECTS ||--|{ SPACES : ""
+    PROJECTS ||--|{ SESSIONS : ""
     
-    SPACES ||--|{ SKILLS : "for every space there are 1 to many skills"
-    SPACES |o--o{ SESSIONS : "for every session there is 0 or 1 space; for every space there are 0 or more sessions"
+    SPACES ||--|{ SKILLS : ""
+    SPACES |o--o{ SESSIONS : ""
     
-    SESSIONS ||--|{ MESSAGES : "for every session there are 1 to many messages"
+    SESSIONS ||--|{ MESSAGES : ""
+
+    MESSAGES ||--|{ MESSAGE_ASSETS : ""
+    ASSETS ||--|{ MESSAGE_ASSETS : ""
 ```
