@@ -28,9 +28,8 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, name string
 
 func NewV1Service(
 	p persister.V1Persister,
-	opts ...service.Option,
 ) *V1Service {
-	s := service.New(opts...)
+	s := service.New()
 	return &V1Service{
 		Service:   s,
 		persister: p,

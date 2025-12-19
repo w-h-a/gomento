@@ -15,9 +15,17 @@ import (
 
 type V1Service struct {
 	*service.Service
-	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
+	persister  persister.V1Persister
 	distiller  distiller.V1Distiller
+}
+
+func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Task) error, qname string) error {
+	return s.dispatcher.Subscribe(ctx, cb, dispatcher.SubscribeWithQueue(qname))
+}
+
+func (s *V1Service) Close(ctx context.Context) error {
+	return s.dispatcher.Close(ctx)
 }
 
 func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
@@ -50,9 +58,8 @@ func NewV1Service(
 	p persister.V1Persister,
 	disp dispatcher.V1Dispatcher,
 	dist distiller.V1Distiller,
-	opts ...service.Option,
 ) *V1Service {
-	s := service.New(opts...)
+	s := service.New()
 	return &V1Service{
 		Service:    s,
 		persister:  p,

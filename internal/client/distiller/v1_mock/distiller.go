@@ -13,11 +13,14 @@ type v1MockDistiller struct {
 }
 
 func (d *v1MockDistiller) Distill(ctx context.Context, history []v1.Message) (*v1.Skill, error) {
+	embedding := make([]float32, 1536)
+	embedding[0] = 0.01
+
 	return &v1.Skill{
 		Id:        uuid.New(),
 		Trigger:   "how to restart redis",
 		SOP:       "1. Check logs.\n2. Delete pod.",
-		Embedding: []float32{1536},
+		Embedding: embedding,
 	}, nil
 }
 

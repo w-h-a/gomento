@@ -15,6 +15,7 @@ type V1Service struct {
 	*service.Service
 	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
+	qname      string
 }
 
 func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId uuid.UUID) (*v1.Session, error) {
@@ -49,18 +50,19 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 		Payload:   payload,
 		CreatedAt: time.Now(),
 	}
-	return s.dispatcher.Publish(ctx, task)
+	return s.dispatcher.Publish(ctx, task, dispatcher.PublishWithQueue(s.qname))
 }
 
 func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
-	opts ...service.Option,
+	qname string,
 ) *V1Service {
-	s := service.New(opts...)
+	s := service.New()
 	return &V1Service{
 		Service:    s,
 		persister:  p,
 		dispatcher: d,
+		qname:      qname,
 	}
 }

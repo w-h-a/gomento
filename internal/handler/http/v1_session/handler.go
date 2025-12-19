@@ -22,14 +22,24 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 
-	req := v1.Session{}
+	var req struct {
+		ProjectId string `json:"project_id"`
+		SpaceId   string `json:"space_id"`
+	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	s, err := h.service.Create(ctx, req.ProjectId, req.SpaceId)
+	pid, err := uuid.Parse(req.ProjectId)
+	sid, err := uuid.Parse(req.SpaceId)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid UUIDs")
+		return
+	}
+
+	s, err := h.service.Create(ctx, pid, sid)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return

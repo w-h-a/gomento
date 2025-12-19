@@ -10,12 +10,11 @@ import (
 )
 
 type Service struct {
-	options   Options
 	isRunning bool
 	mtx       sync.RWMutex
 }
 
-func (s *Service) Run(stop chan struct{}) error {
+func (s *Service) Run(stop chan struct{}, startCb func() error, stopCb func(context.Context) error) error {
 	s.mtx.RLock()
 	if s.isRunning {
 		s.mtx.RUnlock()
@@ -23,16 +22,16 @@ func (s *Service) Run(stop chan struct{}) error {
 	}
 	s.mtx.RUnlock()
 
-	if err := s.Start(); err != nil {
+	if err := s.Start(startCb); err != nil {
 		return fmt.Errorf("failed to start service: %w", err)
 	}
 
 	<-stop
 
-	return s.Stop()
+	return s.Stop(stopCb)
 }
 
-func (s *Service) Start() error {
+func (s *Service) Start(startCb func() error) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -40,8 +39,8 @@ func (s *Service) Start() error {
 		return errors.New("service already started")
 	}
 
-	if s.options.StartCallback != nil {
-		if err := s.options.StartCallback(); err != nil {
+	if startCb != nil {
+		if err := startCb(); err != nil {
 			return err
 		}
 	}
@@ -51,13 +50,13 @@ func (s *Service) Start() error {
 	return nil
 }
 
-func (s *Service) Stop() error {
+func (s *Service) Stop(stopCb func(context.Context) error) error {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stopCancel()
-	return s.stop(stopCtx)
+	return s.stop(stopCtx, stopCb)
 }
 
-func (s *Service) stop(ctx context.Context) error {
+func (s *Service) stop(ctx context.Context, stopCb func(context.Context) error) error {
 	s.mtx.Lock()
 
 	if !s.isRunning {
@@ -71,8 +70,8 @@ func (s *Service) stop(ctx context.Context) error {
 
 	gracefulStopDone := make(chan struct{})
 	go func() {
-		if s.options.StopCallback != nil {
-			if err := s.options.StopCallback(ctx); err != nil {
+		if stopCb != nil {
+			if err := stopCb(ctx); err != nil {
 				slog.ErrorContext(ctx, "stop callback error", "error", err)
 			}
 		}
@@ -90,10 +89,8 @@ func (s *Service) stop(ctx context.Context) error {
 	return stopErr
 }
 
-func New(opts ...Option) *Service {
-	options := NewOptions(opts...)
-
+func New() *Service {
 	return &Service{
-		options: options,
+		mtx: sync.RWMutex{},
 	}
 }
