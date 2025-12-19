@@ -27,9 +27,8 @@ func (s *V1Service) Create(ctx context.Context, name string) (*v1.Project, error
 
 func NewV1Service(
 	p persister.V1Persister,
-	opts ...service.Option,
 ) *V1Service {
-	s := service.New(opts...)
+	s := service.New()
 	return &V1Service{
 		Service:   s,
 		persister: p,

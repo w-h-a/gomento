@@ -43,7 +43,7 @@ func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Con
 			case data := <-q:
 				if err := cb(context.Background(), data); err != nil {
 					// span
-					slog.ErrorContext(context.Background(), "failed to process incoming data", "data", data, "error", err)
+					slog.ErrorContext(context.Background(), "failed to process incoming data", "data", *data, "error", err)
 				}
 			}
 		}
@@ -56,7 +56,7 @@ func (d *v1MemDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...di
 	options := dispatcher.NewPublishOptions(opts...)
 
 	// span
-	slog.InfoContext(ctx, "publishing to queue", "data", task, "queue", options.Queue)
+	slog.InfoContext(ctx, "publishing to queue", "data", *task, "queue", options.Queue)
 
 	d.mtx.Lock()
 	q, ok := d.queues[options.Queue]
