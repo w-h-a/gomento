@@ -34,9 +34,9 @@ graph TD
     end
 
     %% Flow 1: Storing Context
-    Agent -- "1. Push Logs (Async)" --> API
-    API -- "2. Enqueue Task" --> Queue
-    Queue -- "3. Consume" --> Worker
+    Agent -- "1. Push chat logs" --> API
+    API -- "2. Produce Task" --> Queue
+    Queue -- "3. Consume Task" --> Worker
     Worker -- "4. Distill (Extract SOP)" --> LLM
     LLM -- "5. Return Structured Skill" --> Worker
     Worker -- "6. Save Skill/Vector" --> Postgres
