@@ -30,7 +30,25 @@ type Message struct {
 	Id        uuid.UUID `json:"id"`
 	SessionId uuid.UUID `json:"session_id"`
 	Role      string    `json:"role"`
-	Content   string    `json:"content"`
+	Parts     []Part    `json:"parts"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Part struct {
+	Type    string         `json:"type"` // "text", "image", "file"
+	Text    string         `json:"text,omitempty"`
+	AssetId *uuid.UUID     `json:"asset_id,omitempty"`
+	Meta    map[string]any `json:"meta,omitempty"`
+}
+
+type Asset struct {
+	Id        uuid.UUID `json:"id"`
+	Container string    `json:"container"`
+	Path      string    `json:"path"`
+	ETag      string    `json:"etag"`
+	SHA256    string    `json:"sha256"`
+	MIME      string    `json:"mime"`
+	SizeBytes int64     `json:"size_bytes"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

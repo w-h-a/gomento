@@ -3,6 +3,8 @@ package v1postgres
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -63,14 +65,56 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 	return &sess, nil
 }
 
-func (p *v1PGPersister) AddMessage(ctx context.Context, msg *v1.Message) error {
-	query := `INSERT INTO messages (id, session_id, role, content) VALUES ($1, $2, $3, $4);`
-	_, err := p.conn.ExecContext(ctx, query, msg.Id, msg.SessionId, msg.Role, msg.Content)
-	return err
+func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets []*v1.Asset) error {
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	partsJson, err := json.Marshal(msg.Parts)
+	if err != nil {
+		return err
+	}
+
+	// 1. Insert Message
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO messages (id, session_id, role, parts) VALUES ($1, $2, $3, $4)`,
+		msg.Id, msg.SessionId, msg.Role, partsJson)
+	if err != nil {
+		return err
+	}
+
+	// 2. Upsert Assets & Link
+	for _, a := range assets {
+		// Upsert Asset (Deduplicate)
+		row := tx.QueryRowContext(ctx, `
+			INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (container, path) DO UPDATE SET path=EXCLUDED.path 
+			RETURNING id`,
+			a.Id, a.Container, a.Path, a.ETag, a.SHA256, a.MIME, a.SizeBytes,
+		)
+
+		var finalAssetID uuid.UUID
+		if err := row.Scan(&finalAssetID); err != nil {
+			return err
+		}
+
+		// Link
+		_, err = tx.ExecContext(ctx,
+			`INSERT INTO message_assets (message_id, asset_id) VALUES ($1, $2)`,
+			msg.Id, finalAssetID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
-	query := `SELECT id, session_id, role, content, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC;`
+	query := `SELECT id, session_id, role, parts, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC;`
 	rows, err := p.conn.QueryContext(ctx, query, sessionId)
 	if err != nil {
 		return nil, err
@@ -80,9 +124,16 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([
 	var msgs []v1.Message
 	for rows.Next() {
 		var m v1.Message
-		if err := rows.Scan(&m.Id, &m.SessionId, &m.Role, &m.Content, &m.CreatedAt); err != nil {
+		var partsBytes []byte
+
+		if err := rows.Scan(&m.Id, &m.SessionId, &m.Role, &partsBytes, &m.CreatedAt); err != nil {
 			return nil, err
 		}
+
+		if err := json.Unmarshal(partsBytes, &m.Parts); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal message parts: %w", err)
+		}
+
 		msgs = append(msgs, m)
 	}
 

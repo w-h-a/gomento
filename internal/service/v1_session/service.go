@@ -2,6 +2,7 @@ package v1session
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -30,14 +31,61 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId uui
 	return p, nil
 }
 
-func (s *V1Service) AddMessage(ctx context.Context, sessionId uuid.UUID, role string, content string) error {
+func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
+	assets := []*v1.Asset{}
+	finalParts := []v1.Part{}
+
+	for _, pIn := range in.Parts {
+		domainPart := v1.Part{
+			Type: pIn.Type,
+			Text: pIn.Text,
+			Meta: pIn.Meta,
+		}
+
+		if pIn.Type == "text" {
+			finalParts = append(finalParts, domainPart)
+			continue
+		}
+
+		if len(pIn.FileField) == 0 {
+			return fmt.Errorf("part type %s missing file_field", pIn.Type)
+		}
+
+		_, ok := in.Files[pIn.FileField]
+		if !ok {
+			return fmt.Errorf("file %s not found", pIn.FileField)
+		}
+
+		// meta, err := s.uploader.Upload(ctx, fh)
+		// if err != nil {
+		// 	return fmt.Errorf("upload failed: %w", err)
+		// }
+
+		assetId := uuid.New()
+		// asset := &v1.Asset{
+		// 	Id:        assetId,
+		// 	Container: meta.Container,
+		// 	Path:      meta.Path,
+		// 	ETag:      meta.ETag,
+		// 	SHA256:    meta.SHA256,
+		// 	MIME:      meta.MIME,
+		// 	SizeBytes: meta.SizeB,
+		// }
+		// assets = append(assets, asset)
+
+		domainPart.AssetId = &assetId
+
+		finalParts = append(finalParts, domainPart)
+	}
+
 	msg := &v1.Message{
 		Id:        uuid.New(),
-		SessionId: sessionId,
-		Role:      role,
-		Content:   content,
+		SessionId: in.SessionId,
+		Role:      in.Role,
+		Parts:     finalParts,
 	}
-	return s.persister.AddMessage(ctx, msg)
+
+	return s.persister.CreateMessageWithAssets(ctx, msg, assets)
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {

@@ -1,0 +1,6 @@
+DROP TABLE IF EXISTS message_assets;
+
+ALTER TABLE messages DROP COLUMN parts;
+ALTER TABLE messages ADD COLUMN content TEXT NOT NULL DEFAULT '';
+
+DROP TABLE IF EXISTS assets;

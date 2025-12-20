@@ -91,17 +91,19 @@ erDiagram
         UUID id PK
         UUID session_id FK
         VARCHAR role "'user' or 'assistant'"
-        JSONB parts "replaces 'content'. Stores [{'type':'text'}, {'type':'image'}]"
+        JSONB parts "Stores [{'type':'text'}, {'type':'image'}]"
         TIMESTAMPTZ created_at
     }
 
     ASSETS {
         UUID id PK
-        TEXT bucket "MinIO Bucket"
-        TEXT s3_key "Path to file in S3"
+        TEXT container "e.g., Bucket"
+        TEXT path "Path to file"
+        TEXT etag
+        TEXT sha256 "Deduplication hash"
         TEXT mime "e.g. image/png"
         BIGINT size_bytes
-        TEXT sha256 "Deduplication hash"
+        TIMESTAMPTZ created_at
     }
 
     MESSAGE_ASSETS {

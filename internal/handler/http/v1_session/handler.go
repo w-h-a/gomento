@@ -2,11 +2,11 @@ package v1session
 
 import (
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	"github.com/w-h-a/gomento/internal/util"
@@ -61,14 +61,35 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := v1.Message{}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid request body")
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid form data")
 		return
 	}
 
-	if err := h.service.AddMessage(ctx, id, req.Role, req.Content); err != nil {
+	partsStr := r.FormValue("parts")
+	var parts []v1session.PartInput
+	if err := json.Unmarshal([]byte(partsStr), &parts); err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid parts JSON")
+		return
+	}
+
+	fileMap := make(map[string]*multipart.FileHeader)
+	if r.MultipartForm != nil {
+		for name, files := range r.MultipartForm.File {
+			if len(files) > 0 {
+				fileMap[name] = files[0]
+			}
+		}
+	}
+
+	input := v1session.SendMessageInput{
+		SessionId: id,
+		Role:      r.FormValue("role"),
+		Parts:     parts,
+		Files:     fileMap,
+	}
+
+	if err := h.service.AddMessage(ctx, input); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
