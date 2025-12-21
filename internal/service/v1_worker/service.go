@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/distiller"
@@ -33,14 +32,12 @@ func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
 		return fmt.Errorf("unknown task type")
 	}
 
-	sessionId := uuid.MustParse(task.Payload["session_id"].(string))
-
-	msgs, err := s.persister.GetMessages(ctx, sessionId)
+	msgs, err := s.persister.GetMessages(ctx, task.Payload.SessionId)
 	if err != nil {
 		return err
 	}
 
-	sess, err := s.persister.GetSession(ctx, sessionId)
+	sess, err := s.persister.GetSession(ctx, task.Payload.SessionId)
 	if err != nil {
 		return err
 	}

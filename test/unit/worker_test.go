@@ -79,8 +79,8 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 
 	task := &v1.Task{
 		Type: v1.TaskTypeDistill,
-		Payload: map[string]any{
-			"session_id": sessionId.String(),
+		Payload: v1.Payload{
+			SessionId: sessionId,
 		},
 	}
 
