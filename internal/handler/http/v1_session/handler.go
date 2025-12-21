@@ -61,11 +61,6 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid form data")
-		return
-	}
-
 	partsStr := r.FormValue("parts")
 	var parts []v1session.PartInput
 	if err := json.Unmarshal([]byte(partsStr), &parts); err != nil {

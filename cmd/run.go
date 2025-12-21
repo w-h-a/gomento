@@ -17,6 +17,8 @@ import (
 	v1mock "github.com/w-h-a/gomento/internal/client/distiller/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
+	"github.com/w-h-a/gomento/internal/client/uploader"
+	v1s3 "github.com/w-h-a/gomento/internal/client/uploader/v1_s3"
 	v1projecthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_project"
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
@@ -79,6 +81,18 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
+		u, err := InitV1Uploader(
+			ctx,
+			"http://localhost:9000",
+			"us-east-1",
+			"gomento-assets",
+			"user",
+			"password",
+		)
+		if err != nil {
+			return err
+		}
+
 		projectService = v1projectservice.NewV1Service(p)
 		stopChannels["project"] = make(chan struct{})
 		spaceService = v1spaceservice.NewV1Service(p)
@@ -86,6 +100,7 @@ func Run(c *cli.Context) error {
 		sessionService = v1sessionservice.NewV1Service(
 			p,
 			disp,
+			u,
 			qname,
 		)
 		stopChannels["session"] = make(chan struct{})
@@ -205,6 +220,24 @@ func InitV1Dispatcher(ctx context.Context) (dispatcher.V1Dispatcher, error) {
 // TODO: accept user configuration
 func InitV1Distiller(ctx context.Context) (distiller.V1Distiller, error) {
 	return v1mock.NewV1Distiller(), nil
+}
+
+// TODO: accept user configuration
+func InitV1Uploader(
+	ctx context.Context,
+	endpoint string,
+	region string,
+	container string,
+	user string,
+	password string,
+) (uploader.V1Uploader, error) {
+	return v1s3.NewV1Uploader(
+		uploader.WithEndpoint(endpoint),
+		uploader.WithRegion(region),
+		uploader.WithContainer(container),
+		uploader.WithUser(user),
+		uploader.WithSecret(password),
+	), nil
 }
 
 // TODO: accept user configuration
