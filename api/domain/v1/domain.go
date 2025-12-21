@@ -61,13 +61,28 @@ type Skill struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type TaskStatus string
+
 const (
 	TaskTypeDistill = "distill_session"
+
+	TaskStatusPending TaskStatus = "pending"
+	TaskStatusRunning TaskStatus = "running"
+	TaskStatusSuccess TaskStatus = "success"
+	TaskStatusFailed  TaskStatus = "failed"
 )
 
 type Task struct {
-	Id        uuid.UUID      `json:"id"`
-	Type      string         `json:"type"`
-	Payload   map[string]any `json:"payload"`
-	CreatedAt time.Time      `json:"created_at"`
+	Id        uuid.UUID `json:"id"`
+	Type      string    `json:"type"`
+	Payload   Payload   `json:"payload"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Payload struct {
+	SessionId       uuid.UUID   `json:"session_id"`
+	TaskName        string      `json:"task_name"`
+	TaskDescription string      `json:"task_description"`
+	TaskStatus      TaskStatus  `json:"task_status"`
+	MessageIds      []uuid.UUID `json:"message_ids"`
 }

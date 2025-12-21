@@ -82,8 +82,11 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
-	payload := map[string]any{
-		"session_id": sessionId.String(),
+	payload := v1.Payload{
+		SessionId:       sessionId,
+		TaskName:        "Distill Session",
+		TaskDescription: fmt.Sprintf("Distilling session %s", sessionId),
+		TaskStatus:      v1.TaskStatusPending,
 	}
 	task := &v1.Task{
 		Id:        uuid.New(),
