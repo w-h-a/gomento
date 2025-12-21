@@ -2,6 +2,7 @@ package v1mock
 
 import (
 	"context"
+	"maps"
 	"mime/multipart"
 	"sync"
 
@@ -30,6 +31,14 @@ func (u *v1MockUploader) Upload(ctx context.Context, fh *multipart.FileHeader) (
 		MIME:      contentType,
 		SizeBytes: fh.Size,
 	}, nil
+}
+
+func (u *v1MockUploader) Uploads() map[string]int64 {
+	u.mtx.RLock()
+	defer u.mtx.RUnlock()
+	cpy := make(map[string]int64, len(u.uploads))
+	maps.Copy(cpy, u.uploads)
+	return cpy
 }
 
 func NewV1Uploader(opts ...uploader.Option) *v1MockUploader {

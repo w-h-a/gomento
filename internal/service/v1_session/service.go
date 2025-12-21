@@ -9,6 +9,7 @@ import (
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/persister"
+	"github.com/w-h-a/gomento/internal/client/uploader"
 	"github.com/w-h-a/gomento/internal/service"
 )
 
@@ -16,6 +17,7 @@ type V1Service struct {
 	*service.Service
 	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
+	uploader   uploader.V1Uploader
 	qname      string
 }
 
@@ -51,30 +53,21 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
 			return fmt.Errorf("part type %s missing file_field", pIn.Type)
 		}
 
-		_, ok := in.Files[pIn.FileField]
+		fh, ok := in.Files[pIn.FileField]
 		if !ok {
 			return fmt.Errorf("file %s not found", pIn.FileField)
 		}
 
-		// meta, err := s.uploader.Upload(ctx, fh)
-		// if err != nil {
-		// 	return fmt.Errorf("upload failed: %w", err)
-		// }
+		asset, err := s.uploader.Upload(ctx, fh)
+		if err != nil {
+			return fmt.Errorf("upload failed: %w", err)
+		}
 
 		assetId := uuid.New()
-		// asset := &v1.Asset{
-		// 	Id:        assetId,
-		// 	Container: meta.Container,
-		// 	Path:      meta.Path,
-		// 	ETag:      meta.ETag,
-		// 	SHA256:    meta.SHA256,
-		// 	MIME:      meta.MIME,
-		// 	SizeBytes: meta.SizeB,
-		// }
-		// assets = append(assets, asset)
+		asset.Id = assetId
+		assets = append(assets, asset)
 
 		domainPart.AssetId = &assetId
-
 		finalParts = append(finalParts, domainPart)
 	}
 
@@ -104,6 +97,7 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
+	u uploader.V1Uploader,
 	qname string,
 ) *V1Service {
 	s := service.New()
@@ -111,6 +105,7 @@ func NewV1Service(
 		Service:    s,
 		persister:  p,
 		dispatcher: d,
+		uploader:   u,
 		qname:      qname,
 	}
 }

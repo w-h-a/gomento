@@ -16,6 +16,7 @@ type v1MockPersister struct {
 	spaces   map[uuid.UUID]*v1.Space
 	sessions map[uuid.UUID]*v1.Session
 	messages map[uuid.UUID][]v1.Message
+	assets   map[uuid.UUID]*v1.Asset
 	skills   map[uuid.UUID]*v1.Skill
 	mtx      sync.RWMutex
 }
@@ -78,7 +79,18 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
+	for _, a := range assets {
+		p.assets[a.Id] = a
+	}
 	return nil
+}
+
+func (p *v1MockPersister) Assets() map[uuid.UUID]*v1.Asset {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID]*v1.Asset, len(p.assets))
+	maps.Copy(cpy, p.assets)
+	return cpy
 }
 
 func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
@@ -114,6 +126,7 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 		spaces:   map[uuid.UUID]*v1.Space{},
 		sessions: map[uuid.UUID]*v1.Session{},
 		messages: map[uuid.UUID][]v1.Message{},
+		assets:   map[uuid.UUID]*v1.Asset{},
 		skills:   map[uuid.UUID]*v1.Skill{},
 		mtx:      sync.RWMutex{},
 	}

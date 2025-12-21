@@ -12,7 +12,29 @@ GoMento is a high-performance, single-binary sidecar written in **Go**. It accep
 
 ### Usage
 
-Coming soon!
+```bash
+docker compose up
+
+make migrate-up
+
+go run main.go server
+
+curl -X POST localhost:4000/api/v1/projects -H "Content-Type: application/json" -d '{"name":"myproject"}'
+
+curl -X POST localhost:4000/api/v1/spaces -H "Content-Type: application/json" -d '{"project_id":"$PROJECT_ID","name":"devops"}'
+
+curl -X POST localhost:4000/api/v1/sessions -H "Content-Type: application/json" -d '{"project_id":"$PROJECT_ID","space_id":"$SPACE_ID"}'
+
+curl -X POST localhost:4000/api/v1/sessions/$SESSION_ID/messages -H "Content-Type: multipart/form-data" -F "role=user" -F "parts=[{\"type\":\"text\",\"text\":\"Here is the log:\"},{\"type\":\"file\",\"file_field\":\"logfile\"}]" -F "logfile=@test/files/crash.log"
+
+curl -X POST localhost:4000/api/v1/sessions/$SESSION_ID/finish
+
+# check minio at localhost:9000
+
+# check postgres with make pg-connect
+
+docker compose down
+```
 
 ### Architecture
 

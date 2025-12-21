@@ -50,8 +50,7 @@ func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v
 
 	// generate path uploads/yyyy/mm/dd/hash.ext
 	ext := strings.ToLower(filepath.Ext(fh.Filename))
-	createdAt := time.Now().UTC()
-	datePrefix := createdAt.Format("2006/01/02")
+	datePrefix := time.Now().UTC().Format("2006/01/02")
 	path := fmt.Sprintf("uploads/%s/%s%s", datePrefix, sumHex, ext)
 
 	// upload
@@ -81,7 +80,6 @@ func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v
 		SizeBytes: fh.Size,
 		MIME:      contentType,
 		SHA256:    sumHex,
-		CreatedAt: createdAt,
 	}, nil
 }
 
