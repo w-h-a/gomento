@@ -27,11 +27,12 @@ type Session struct {
 }
 
 type Message struct {
-	Id        uuid.UUID `json:"id"`
-	SessionId uuid.UUID `json:"session_id"`
-	Role      string    `json:"role"`
-	Parts     []Part    `json:"parts"`
-	CreatedAt time.Time `json:"created_at"`
+	Id        uuid.UUID  `json:"id"`
+	SessionId uuid.UUID  `json:"session_id"`
+	ParentId  *uuid.UUID `json:"parent_id,omitempty"`
+	Role      string     `json:"role"`
+	Parts     []Part     `json:"parts"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Part struct {
