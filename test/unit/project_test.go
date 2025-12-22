@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,11 @@ import (
 )
 
 func TestCreate_PersistsProject(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mock.NewV1Persister()
 	s := v1project.NewV1Service(p)

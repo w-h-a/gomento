@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"mime/multipart"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -17,6 +18,11 @@ import (
 )
 
 func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -24,14 +30,12 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	s := v1session.NewV1Service(p, d, u, "worker-queue")
 
 	sessionId := uuid.New()
-
-	files := map[string]*multipart.FileHeader{
-		"my_file": {Filename: "log.txt", Size: 100},
-	}
-
 	ctx := context.Background()
 
 	// Act
+	files := map[string]*multipart.FileHeader{
+		"my_file": {Filename: "log.txt", Size: 100},
+	}
 	input := v1session.SendMessageInput{
 		SessionId: sessionId,
 		Role:      "user",
@@ -47,8 +51,10 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 
 	// Assert: Behavior
 	assert.NotNil(t, msg)
-	assert.Nil(t, msg.ParentId)
 	assert.Equal(t, "user", msg.Role)
+	assert.Len(t, msg.Parts, 2)
+	assert.Nil(t, msg.Parts[0].AssetId)
+	assert.NotNil(t, msg.Parts[1].AssetId)
 
 	// Assert: Uploader
 	uploads := u.Uploads()
@@ -60,7 +66,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, msgs, 1)
 	assert.Equal(t, "Hello World", msgs[0].Parts[0].Text)
-	assert.NotNil(t, msgs[0].Parts[1].AssetId)
+	assert.Equal(t, *msg.Parts[1].AssetId, *msgs[0].Parts[1].AssetId)
 	assert.Equal(t, "user", msgs[0].Role)
 
 	// Assert: Persister Assets

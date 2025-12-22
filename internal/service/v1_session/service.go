@@ -34,7 +34,7 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId uui
 }
 
 func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Message, error) {
-	assets := []*v1.Asset{}
+	assets := map[int]*v1.Asset{}
 	finalParts := []v1.Part{}
 
 	for _, pIn := range in.Parts {
@@ -63,11 +63,11 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			return nil, fmt.Errorf("upload failed: %w", err)
 		}
 
-		assetId := uuid.New()
-		asset.Id = assetId
-		assets = append(assets, asset)
+		asset.Id = uuid.New()
 
-		domainPart.AssetId = &assetId
+		currentPartIdx := len(finalParts)
+		assets[currentPartIdx] = asset
+
 		finalParts = append(finalParts, domainPart)
 	}
 
