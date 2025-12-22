@@ -29,6 +29,9 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 		"my_file": {Filename: "log.txt", Size: 100},
 	}
 
+	ctx := context.Background()
+
+	// Act
 	input := v1session.SendMessageInput{
 		SessionId: sessionId,
 		Role:      "user",
@@ -39,11 +42,13 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 		Files: files,
 	}
 
-	ctx := context.Background()
-
-	// Act
-	err := s.AddMessage(ctx, input)
+	msg, err := s.AddMessage(ctx, input)
 	require.NoError(t, err)
+
+	// Assert: Behavior
+	assert.NotNil(t, msg)
+	assert.Nil(t, msg.ParentId)
+	assert.Equal(t, "user", msg.Role)
 
 	// Assert: Uploader
 	uploads := u.Uploads()
@@ -65,6 +70,57 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Equal(t, "test-bucket", saved.Container)
 	assert.Equal(t, "uploads/log.txt", saved.Path)
 	assert.Equal(t, int64(100), saved.SizeBytes)
+}
+
+func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockuploader.NewV1Uploader(uploader.WithContainer("test-bucket"))
+	s := v1session.NewV1Service(p, d, u, "worker-queue")
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	// Act
+	input1 := v1session.SendMessageInput{
+		SessionId: sessionId,
+		Role:      "user",
+		Parts: []v1session.PartInput{
+			{Type: "text", Text: "First Message"},
+		},
+	}
+	msg1, err := s.AddMessage(ctx, input1)
+	require.NoError(t, err)
+
+	// Assert: Behavior
+	assert.NotNil(t, msg1)
+	assert.Nil(t, msg1.ParentId)
+	assert.Equal(t, "user", msg1.Role)
+
+	// Act
+	input2 := v1session.SendMessageInput{
+		SessionId: sessionId,
+		Role:      "assistant",
+		Parts: []v1session.PartInput{
+			{Type: "text", Text: "Second Message"},
+		},
+	}
+	msg2, err := s.AddMessage(ctx, input2)
+	require.NoError(t, err)
+
+	// Assert: Behavior
+	assert.NotNil(t, msg2)
+	assert.Equal(t, msg1.Id, *msg2.ParentId)
+	assert.Equal(t, "assistant", msg2.Role)
+
+	// Assert: State
+	stored, err := p.GetMessages(ctx, sessionId)
+	assert.NoError(t, err)
+	assert.Len(t, stored, 2)
+	assert.Equal(t, msg1.Id, stored[0].Id)
+	assert.Equal(t, msg2.Id, stored[1].Id)
+	assert.Equal(t, msg1.Id, *stored[1].ParentId)
 }
 
 func TestFinishSession_Publishes(t *testing.T) {
