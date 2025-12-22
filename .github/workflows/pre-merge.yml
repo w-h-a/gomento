@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Check out code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: go mod tidy
+      - name: Run Unit Tests
+        run: make unit-test 
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: go mod tidy
+      - name: Start Postgres & Minio
+        run: docker compose up -d --wait postgres minio
+      - name: Create Buckets
+        run: docker compose run --rm createbuckets
+      - name: Install Golang-Migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.17.0/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/local/bin/migrate
+      - name: Run Database Migrations
+        run: make migrate-up
+      - name: Run Integration Tests
+        run: make integration-test

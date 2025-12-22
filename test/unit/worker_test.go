@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 )
 
 func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 
@@ -57,7 +63,7 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 				},
 			},
 		},
-		[]*v1.Asset{},
+		map[int]*v1.Asset{},
 	)
 	require.NoError(t, err)
 
@@ -73,7 +79,7 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 				},
 			},
 		},
-		[]*v1.Asset{},
+		map[int]*v1.Asset{},
 	)
 	require.NoError(t, err)
 
@@ -105,6 +111,11 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 }
 
 func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	svc := v1worker.NewV1Service(
 		v1mockpersister.NewV1Persister(),

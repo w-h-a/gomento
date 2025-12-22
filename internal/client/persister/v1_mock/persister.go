@@ -75,7 +75,7 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 	return nil, nil
 }
 
-func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets []*v1.Asset) error {
+func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
@@ -85,11 +85,14 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 		msg.ParentId = &lastMsg.Id
 	}
 
-	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
-
-	for _, a := range assets {
+	for partIdx, a := range assets {
+		if partIdx < len(msg.Parts) {
+			msg.Parts[partIdx].AssetId = &a.Id
+		}
 		p.assets[a.Id] = a
 	}
+
+	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
 
 	return nil
 }

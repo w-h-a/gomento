@@ -252,6 +252,19 @@ func InitV1HttpServer(
 		server.WithAddress(addr),
 	)
 
+	v1, err := InitV1Router(ctx, proj, spac, sess)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init router: %w", err)
+	}
+
+	if err := srv.Handle(v1); err != nil {
+		return nil, fmt.Errorf("failed to attach handler: %w", err)
+	}
+
+	return srv, nil
+}
+
+func InitV1Router(ctx context.Context, proj *v1projectservice.V1Service, spac *v1spaceservice.V1Service, sess *v1sessionservice.V1Service) (*mux.Router, error) {
 	router := mux.NewRouter()
 	v1 := router.PathPrefix("/api/v1").Subrouter()
 
@@ -266,9 +279,5 @@ func InitV1HttpServer(
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
 
-	if err := srv.Handle(v1); err != nil {
-		return nil, fmt.Errorf("failed to attach handler: %w", err)
-	}
-
-	return srv, nil
+	return v1, nil
 }

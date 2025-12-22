@@ -65,13 +65,41 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 	return &sess, nil
 }
 
-func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets []*v1.Asset) error {
+func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
 	tx, err := p.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
+	// insert assets and ensure msg.Parts[idx] has correct AssetId
+	for partIdx, a := range assets {
+		row := tx.QueryRowContext(
+			ctx,
+			`INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT (container, path) DO UPDATE SET 
+				etag=EXCLUDED.etag,
+				sha256=EXCLUDED.sha256,
+				mime=EXCLUDED.mime,
+				size_bytes=EXCLUDED.size_bytes
+			RETURNING id`,
+			a.Id, a.Container, a.Path, a.ETag, a.SHA256, a.MIME, a.SizeBytes,
+		)
+
+		var finalAssetID uuid.UUID
+		if err := row.Scan(&finalAssetID); err != nil {
+			return err
+		}
+
+		if partIdx < len(msg.Parts) {
+			msg.Parts[partIdx].AssetId = &finalAssetID
+		}
+
+		a.Id = finalAssetID
+	}
+
+	// insert message
 	partsJson, err := json.Marshal(msg.Parts)
 	if err != nil {
 		return err
@@ -83,6 +111,7 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	INSERT INTO messages (id, session_id, parent_id, role, parts)
 	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4)
 	RETURNING parent_id, created_at;`
+
 	if err := tx.QueryRowContext(
 		ctx,
 		query,
@@ -94,25 +123,12 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 		return err
 	}
 
+	// link messages and assets
 	for _, a := range assets {
-		row := tx.QueryRowContext(
-			ctx,
-			`INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			ON CONFLICT (container, path) DO UPDATE SET path=EXCLUDED.path 
-			RETURNING id`,
-			a.Id, a.Container, a.Path, a.ETag, a.SHA256, a.MIME, a.SizeBytes,
-		)
-
-		var finalAssetID uuid.UUID
-		if err := row.Scan(&finalAssetID); err != nil {
-			return err
-		}
-
 		if _, err = tx.ExecContext(
 			ctx,
 			`INSERT INTO message_assets (message_id, asset_id) VALUES ($1, $2)`,
-			msg.Id, finalAssetID); err != nil {
+			msg.Id, a.Id); err != nil {
 			return err
 		}
 	}

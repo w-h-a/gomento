@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +13,11 @@ import (
 )
 
 func TestCreate_PersistsSpaceLinkedToProject(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mock.NewV1Persister()
 	s := v1space.NewV1Service(p)
