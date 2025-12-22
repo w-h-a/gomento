@@ -72,26 +72,25 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	}
 	defer tx.Rollback()
 
-	var parentId uuid.UUID
-	if err = tx.QueryRowContext(
-		ctx,
-		`SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1;`,
-		msg.SessionId,
-	).Scan(&parentId); err == nil {
-		msg.ParentId = &parentId
-	} else if err != sql.ErrNoRows {
-		return err
-	}
-
 	partsJson, err := json.Marshal(msg.Parts)
 	if err != nil {
 		return err
 	}
 
-	if _, err := tx.ExecContext(
+	query := `WITH last_message AS (
+		SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1
+	)
+	INSERT INTO messages (id, session_id, parent_id, role, parts)
+	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4)
+	RETURNING parent_id, created_at;`
+	if err := tx.QueryRowContext(
 		ctx,
-		`INSERT INTO messages (id, session_id, parent_id, role, parts) VALUES ($1, $2, $3, $4, $5)`,
-		msg.Id, msg.SessionId, msg.ParentId, msg.Role, partsJson); err != nil {
+		query,
+		msg.SessionId,
+		msg.Id,
+		msg.Role,
+		partsJson,
+	).Scan(&msg.ParentId, &msg.CreatedAt); err != nil {
 		return err
 	}
 

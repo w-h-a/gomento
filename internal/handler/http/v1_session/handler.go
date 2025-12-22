@@ -84,12 +84,13 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 		Files:     fileMap,
 	}
 
-	if err := h.service.AddMessage(ctx, input); err != nil {
+	msg, err := h.service.AddMessage(ctx, input)
+	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	httphandler.WrtJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	httphandler.WrtJSON(w, http.StatusOK, msg)
 }
 
 func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {

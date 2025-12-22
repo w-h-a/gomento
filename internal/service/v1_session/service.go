@@ -33,7 +33,7 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId uui
 	return p, nil
 }
 
-func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
+func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Message, error) {
 	assets := []*v1.Asset{}
 	finalParts := []v1.Part{}
 
@@ -50,17 +50,17 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
 		}
 
 		if len(pIn.FileField) == 0 {
-			return fmt.Errorf("part type %s missing file_field", pIn.Type)
+			return nil, fmt.Errorf("part type %s missing file_field", pIn.Type)
 		}
 
 		fh, ok := in.Files[pIn.FileField]
 		if !ok {
-			return fmt.Errorf("file %s not found", pIn.FileField)
+			return nil, fmt.Errorf("file %s not found", pIn.FileField)
 		}
 
 		asset, err := s.uploader.Upload(ctx, fh)
 		if err != nil {
-			return fmt.Errorf("upload failed: %w", err)
+			return nil, fmt.Errorf("upload failed: %w", err)
 		}
 
 		assetId := uuid.New()
@@ -78,7 +78,11 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) error {
 		Parts:     finalParts,
 	}
 
-	return s.persister.CreateMessageWithAssets(ctx, msg, assets)
+	if err := s.persister.CreateMessageWithAssets(ctx, msg, assets); err != nil {
+		return nil, err
+	}
+
+	return msg, nil
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
