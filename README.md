@@ -112,6 +112,7 @@ erDiagram
     MESSAGES {
         UUID id PK
         UUID session_id FK
+        UUID parent_id FK "Nullable, self-reference"
         VARCHAR role "'user' or 'assistant'"
         JSONB parts "Stores [{'type':'text'}, {'type':'image'}]"
         TIMESTAMPTZ created_at
