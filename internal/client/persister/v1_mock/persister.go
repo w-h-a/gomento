@@ -78,10 +78,19 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets []*v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
+
+	existingMsgs := p.messages[msg.SessionId]
+	if len(existingMsgs) > 0 {
+		lastMsg := existingMsgs[len(existingMsgs)-1]
+		msg.ParentId = &lastMsg.Id
+	}
+
 	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
+
 	for _, a := range assets {
 		p.assets[a.Id] = a
 	}
+
 	return nil
 }
 

@@ -72,24 +72,33 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	}
 	defer tx.Rollback()
 
+	var parentId uuid.UUID
+	if err = tx.QueryRowContext(
+		ctx,
+		`SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1;`,
+		msg.SessionId,
+	).Scan(&parentId); err == nil {
+		msg.ParentId = &parentId
+	} else if err != sql.ErrNoRows {
+		return err
+	}
+
 	partsJson, err := json.Marshal(msg.Parts)
 	if err != nil {
 		return err
 	}
 
-	// 1. Insert Message
-	_, err = tx.ExecContext(ctx,
-		`INSERT INTO messages (id, session_id, role, parts) VALUES ($1, $2, $3, $4)`,
-		msg.Id, msg.SessionId, msg.Role, partsJson)
-	if err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`INSERT INTO messages (id, session_id, parent_id, role, parts) VALUES ($1, $2, $3, $4, $5)`,
+		msg.Id, msg.SessionId, msg.ParentId, msg.Role, partsJson); err != nil {
 		return err
 	}
 
-	// 2. Upsert Assets & Link
 	for _, a := range assets {
-		// Upsert Asset (Deduplicate)
-		row := tx.QueryRowContext(ctx, `
-			INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
+		row := tx.QueryRowContext(
+			ctx,
+			`INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
 			VALUES ($1, $2, $3, $4, $5, $6, $7)
 			ON CONFLICT (container, path) DO UPDATE SET path=EXCLUDED.path 
 			RETURNING id`,
@@ -101,11 +110,10 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 			return err
 		}
 
-		// Link
-		_, err = tx.ExecContext(ctx,
+		if _, err = tx.ExecContext(
+			ctx,
 			`INSERT INTO message_assets (message_id, asset_id) VALUES ($1, $2)`,
-			msg.Id, finalAssetID)
-		if err != nil {
+			msg.Id, finalAssetID); err != nil {
 			return err
 		}
 	}
@@ -114,7 +122,7 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 }
 
 func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
-	query := `SELECT id, session_id, role, parts, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC;`
+	query := `SELECT id, session_id, parent_id, role, parts, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC;`
 	rows, err := p.conn.QueryContext(ctx, query, sessionId)
 	if err != nil {
 		return nil, err
@@ -126,7 +134,7 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([
 		var m v1.Message
 		var partsBytes []byte
 
-		if err := rows.Scan(&m.Id, &m.SessionId, &m.Role, &partsBytes, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.Id, &m.SessionId, &m.ParentId, &m.Role, &partsBytes, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 
