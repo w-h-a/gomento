@@ -133,7 +133,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 
 	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
 	disp, _ := cmd.InitV1Dispatcher(ctx)
-	dist, _ := cmd.InitV1Distiller(ctx)
+	dist, _ := cmd.InitV1Distiller(ctx, "", "")
 	u, _ := cmd.InitV1Uploader(
 		ctx,
 		MINIO_END,

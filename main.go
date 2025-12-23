@@ -16,6 +16,13 @@ func main() {
 				Action: func(ctx *cli.Context) error {
 					return cmd.Run(ctx)
 				},
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "api_key",
+						Usage:    "API key for LLM Model",
+						Required: false,
+					},
+				},
 			},
 		},
 	}

@@ -15,6 +15,7 @@ import (
 	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
 	"github.com/w-h-a/gomento/internal/client/distiller"
 	v1mock "github.com/w-h-a/gomento/internal/client/distiller/v1_mock"
+	v1openai "github.com/w-h-a/gomento/internal/client/distiller/v1_openai"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
 	"github.com/w-h-a/gomento/internal/client/uploader"
@@ -56,7 +57,13 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
-		dist, err := InitV1Distiller(ctx)
+		apiKey := c.String("api_key")
+
+		dist, err := InitV1Distiller(
+			ctx,
+			apiKey,
+			"gpt-3.5-turbo",
+		)
 		if err != nil {
 			return err
 		}
@@ -218,7 +225,18 @@ func InitV1Dispatcher(ctx context.Context) (dispatcher.V1Dispatcher, error) {
 }
 
 // TODO: accept user configuration
-func InitV1Distiller(ctx context.Context) (distiller.V1Distiller, error) {
+func InitV1Distiller(
+	ctx context.Context,
+	apiKey string,
+	model string,
+) (distiller.V1Distiller, error) {
+	if len(apiKey) > 0 {
+		return v1openai.NewV1Distiller(
+			distiller.WithApiKey(apiKey),
+			distiller.WithModel(model),
+		), nil
+	}
+
 	return v1mock.NewV1Distiller(), nil
 }
 
