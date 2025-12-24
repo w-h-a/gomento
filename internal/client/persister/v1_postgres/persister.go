@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	_ "github.com/lib/pq"
@@ -136,9 +137,27 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	return tx.Commit()
 }
 
-func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
-	query := `SELECT id, session_id, parent_id, role, parts, created_at FROM messages WHERE session_id = $1 ORDER BY created_at ASC;`
-	rows, err := p.conn.QueryContext(ctx, query, sessionId)
+func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.GetMessagesOption) ([]v1.Message, error) {
+	options := persister.NewGetMessagesOptions(opts...)
+
+	query := `SELECT id, session_id, parent_id, role, parts, created_at FROM messages WHERE session_id = $1`
+	args := []any{sessionId}
+	argIdx := 2
+
+	if !options.AfterCreatedAt.IsZero() && options.AfterId != uuid.Nil {
+		query += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id < $%d))`, argIdx, argIdx, argIdx+1)
+		args = append(args, options.AfterCreatedAt, options.AfterId)
+		argIdx += 2
+	}
+
+	query += ` ORDER BY created_at DESC, id DESC`
+
+	if options.Limit > 0 {
+		query += fmt.Sprintf(` LIMIT $%d`, argIdx)
+		args = append(args, options.Limit)
+	}
+
+	rows, err := p.conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -165,6 +184,40 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([
 	}
 
 	return msgs, nil
+}
+
+func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]*v1.Asset{}, nil
+	}
+
+	query := `SELECT id, container, path, mime, size_bytes FROM assets WHERE id = ANY($1)`
+
+	idStrings := make([]string, len(ids))
+	for i, id := range ids {
+		idStrings[i] = id.String()
+	}
+
+	rows, err := p.conn.QueryContext(ctx, query, fmt.Sprintf("{%s}", strings.Join(idStrings, ",")))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID]*v1.Asset)
+	for rows.Next() {
+		var a v1.Asset
+		if err := rows.Scan(&a.Id, &a.Container, &a.Path, &a.MIME, &a.SizeBytes); err != nil {
+			return nil, err
+		}
+		result[a.Id] = &a
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, rows.Err()
 }
 
 func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {

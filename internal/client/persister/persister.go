@@ -13,6 +13,7 @@ type V1Persister interface {
 	CreateSession(ctx context.Context, sess *v1.Session) error
 	GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error)
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
-	GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error)
+	GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...GetMessagesOption) ([]v1.Message, error)
+	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 	SaveSkill(ctx context.Context, skill *v1.Skill) error
 }

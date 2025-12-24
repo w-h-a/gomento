@@ -134,7 +134,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
 	disp, _ := cmd.InitV1Dispatcher(ctx)
 	dist, _ := cmd.InitV1Distiller(ctx, "", "")
-	u, _ := cmd.InitV1Uploader(
+	f, _ := cmd.InitV1Filer(
 		ctx,
 		MINIO_END,
 		"us-east-1",
@@ -145,7 +145,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 
 	projSvc := v1project.NewV1Service(p)
 	spaceSvc := v1space.NewV1Service(p)
-	sessSvc := v1session.NewV1Service(p, disp, u, "worker")
+	sessSvc := v1session.NewV1Service(p, disp, f, "worker")
 	workerSvc := v1worker.NewV1Service(p, disp, dist)
 
 	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessTask, "worker") }()

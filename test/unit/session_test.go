@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
+	"github.com/w-h-a/gomento/internal/client/filer"
+	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
-	"github.com/w-h-a/gomento/internal/client/uploader"
-	v1mockuploader "github.com/w-h-a/gomento/internal/client/uploader/v1_mock"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 )
 
@@ -26,8 +26,8 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockuploader.NewV1Uploader(uploader.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -56,8 +56,8 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Nil(t, msg.Parts[0].AssetId)
 	assert.NotNil(t, msg.Parts[1].AssetId)
 
-	// Assert: Uploader
-	uploads := u.Uploads()
+	// Assert: Filer
+	uploads := f.Uploads()
 	assert.Len(t, uploads, 1)
 	assert.Contains(t, uploads, "uploads/log.txt")
 
@@ -70,7 +70,8 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Equal(t, "user", msgs[0].Role)
 
 	// Assert: Persister Assets
-	assets := p.Assets()
+	assets, err := p.GetAssets(ctx, []uuid.UUID{*msg.Parts[1].AssetId})
+	assert.NoError(t, err)
 	saved, exists := assets[*msgs[0].Parts[1].AssetId]
 	assert.True(t, exists)
 	assert.Equal(t, "test-bucket", saved.Container)
@@ -82,8 +83,8 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockuploader.NewV1Uploader(uploader.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -133,8 +134,8 @@ func TestFinishSession_Publishes(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockuploader.NewV1Uploader(uploader.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 	sessionId := uuid.New()
 	ctx := context.Background()
 

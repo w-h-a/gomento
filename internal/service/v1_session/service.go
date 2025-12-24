@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
+	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
-	"github.com/w-h-a/gomento/internal/client/uploader"
 	"github.com/w-h-a/gomento/internal/service"
 )
 
@@ -17,7 +17,7 @@ type V1Service struct {
 	*service.Service
 	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
-	uploader   uploader.V1Uploader
+	filer      filer.V1Filer
 	qname      string
 }
 
@@ -58,7 +58,7 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			return nil, fmt.Errorf("file %s not found", pIn.FileField)
 		}
 
-		asset, err := s.uploader.Upload(ctx, fh)
+		asset, err := s.filer.Upload(ctx, fh)
 		if err != nil {
 			return nil, fmt.Errorf("upload failed: %w", err)
 		}
@@ -104,7 +104,7 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
-	u uploader.V1Uploader,
+	f filer.V1Filer,
 	qname string,
 ) *V1Service {
 	s := service.New()
@@ -112,7 +112,7 @@ func NewV1Service(
 		Service:    s,
 		persister:  p,
 		dispatcher: d,
-		uploader:   u,
+		filer:      f,
 		qname:      qname,
 	}
 }

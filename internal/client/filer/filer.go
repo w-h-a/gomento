@@ -1,12 +1,14 @@
-package uploader
+package filer
 
 import (
 	"context"
 	"mime/multipart"
+	"time"
 
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 )
 
-type V1Uploader interface {
+type V1Filer interface {
 	Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error)
+	PresignGet(ctx context.Context, path string, expire time.Duration) (string, error)
 }
