@@ -39,23 +39,27 @@ graph TD
     end
 
     %% Flow 1: Storing Context
-    Agent -- "1. Push Chat Logs & Files" --> API
-    API -- "2. Upload File" --> MinIO
-    MinIO -- "3. Return URL/Key" --> API
-    API -- "4. Save Metadata" --> Postgres
-    API -- "5. Produce Task" --> Queue
+    Agent -- "1. Push Chat Logs & Assets" --> API
+    API -- "2. Upload Assets" --> MinIO
+    API -- "3. Save" --> Postgres
+    API -- "4. Produce Task" --> Queue
     
     %% Flow 2: Distillation
-    Queue -- "6. Consume" --> Worker
+    Queue -- "5. Consume" --> Worker
+    Worker -- "6. Fetch Context" --> Postgres
     Worker -- "7. Distill (Extract SOP)" --> LLM
-    LLM -- "8. Return Structured Skill" --> Worker
-    Worker -- "9. Save Skill/Vector" --> Postgres
+    Worker -- "8. Save Skill/Vector" --> Postgres
 
-    %% Flow 3: Retrieval
-    Agent -- "10. Ask: 'How do I fix Redis?'" --> API
-    API -- "11. Vector Search" --> Postgres
-    Postgres -- "12. Return SOP" --> API
-    API -- "13. Return Context" --> Agent
+    %% Flow 3: Retrieval (Skills)
+    Agent -- "9. Ask: 'How do I fix Redis?'" --> API
+    API -- "10. Vector Search" --> Postgres
+    API -- "11. Return SOP" --> Agent
+
+    %% Flow 4: Retrieval (Messages + Assets)
+    Agent -- "12. Get History (w/ Assets)" --> API
+    API -- "13. Fetch Messages" --> Postgres
+    API -- "14. Presign URLs" --> MinIO
+    API -- "15. Return History" --> Agent
 ```
 
 ### ER Diagram
