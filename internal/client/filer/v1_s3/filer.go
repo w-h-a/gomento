@@ -18,16 +18,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
-	"github.com/w-h-a/gomento/internal/client/uploader"
+	"github.com/w-h-a/gomento/internal/client/filer"
 )
 
-type v1S3Uploader struct {
-	options  uploader.Options
-	client   *s3.Client
-	uploader *manager.Uploader
+type v1S3Filer struct {
+	options   filer.Options
+	client    *s3.Client
+	uploader  *manager.Uploader
+	presigner *s3.PresignClient
 }
 
-func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
+func (f *v1S3Filer) Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
 	// use fileheader to open file contents
 	file, err := fh.Open()
 	if err != nil {
@@ -59,8 +60,8 @@ func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v
 		contentType = "application/octet-stream"
 	}
 
-	out, err := u.uploader.Upload(ctx, &s3.PutObjectInput{
-		Bucket:      aws.String(u.options.Container),
+	out, err := f.uploader.Upload(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(f.options.Container),
 		Key:         aws.String(path),
 		Body:        file,
 		ContentType: aws.String(contentType),
@@ -74,7 +75,7 @@ func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v
 	}
 
 	return &v1.Asset{
-		Container: u.options.Container,
+		Container: f.options.Container,
 		Path:      path,
 		ETag:      aws.ToString(out.ETag),
 		SizeBytes: fh.Size,
@@ -83,12 +84,26 @@ func (u *v1S3Uploader) Upload(ctx context.Context, fh *multipart.FileHeader) (*v
 	}, nil
 }
 
-func NewV1Uploader(opts ...uploader.Option) uploader.V1Uploader {
-	options := uploader.NewOptions(opts...)
+func (f *v1S3Filer) PresignGet(ctx context.Context, path string, expire time.Duration) (string, error) {
+	req, err := f.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(f.options.Container),
+		Key:    aws.String(path),
+	}, func(po *s3.PresignOptions) {
+		po.Expires = expire
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to presign get: %w", err)
+	}
+
+	return req.URL, nil
+}
+
+func NewV1Filer(opts ...filer.Option) filer.V1Filer {
+	options := filer.NewOptions(opts...)
 
 	// TODO: validate options
 
-	u := &v1S3Uploader{
+	f := &v1S3Filer{
 		options: options,
 	}
 
@@ -112,8 +127,9 @@ func NewV1Uploader(opts ...uploader.Option) uploader.V1Uploader {
 		o.UsePathStyle = true
 	})
 
-	u.client = client
-	u.uploader = manager.NewUploader(client)
+	f.client = client
+	f.uploader = manager.NewUploader(client)
+	f.presigner = s3.NewPresignClient(client)
 
-	return u
+	return f
 }

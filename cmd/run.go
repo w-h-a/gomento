@@ -16,10 +16,10 @@ import (
 	"github.com/w-h-a/gomento/internal/client/distiller"
 	v1mock "github.com/w-h-a/gomento/internal/client/distiller/v1_mock"
 	v1openai "github.com/w-h-a/gomento/internal/client/distiller/v1_openai"
+	"github.com/w-h-a/gomento/internal/client/filer"
+	v1s3 "github.com/w-h-a/gomento/internal/client/filer/v1_s3"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
-	"github.com/w-h-a/gomento/internal/client/uploader"
-	v1s3 "github.com/w-h-a/gomento/internal/client/uploader/v1_s3"
 	v1projecthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_project"
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
@@ -88,7 +88,7 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
-		u, err := InitV1Uploader(
+		f, err := InitV1Filer(
 			ctx,
 			"http://localhost:9000",
 			"us-east-1",
@@ -107,7 +107,7 @@ func Run(c *cli.Context) error {
 		sessionService = v1sessionservice.NewV1Service(
 			p,
 			disp,
-			u,
+			f,
 			qname,
 		)
 		stopChannels["session"] = make(chan struct{})
@@ -241,20 +241,20 @@ func InitV1Distiller(
 }
 
 // TODO: accept user configuration
-func InitV1Uploader(
+func InitV1Filer(
 	ctx context.Context,
 	endpoint string,
 	region string,
 	container string,
 	user string,
 	password string,
-) (uploader.V1Uploader, error) {
-	return v1s3.NewV1Uploader(
-		uploader.WithEndpoint(endpoint),
-		uploader.WithRegion(region),
-		uploader.WithContainer(container),
-		uploader.WithUser(user),
-		uploader.WithSecret(password),
+) (filer.V1Filer, error) {
+	return v1s3.NewV1Filer(
+		filer.WithEndpoint(endpoint),
+		filer.WithRegion(region),
+		filer.WithContainer(container),
+		filer.WithUser(user),
+		filer.WithSecret(password),
 	), nil
 }
 

@@ -97,20 +97,24 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 	return nil
 }
 
-func (p *v1MockPersister) Assets() map[uuid.UUID]*v1.Asset {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Asset, len(p.assets))
-	maps.Copy(cpy, p.assets)
-	return cpy
-}
-
-func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
+func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.GetMessagesOption) ([]v1.Message, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	msgs := p.messages[sessionId]
 	cpy := make([]v1.Message, len(msgs))
 	copy(cpy, msgs)
+	return cpy, nil
+}
+
+func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID]*v1.Asset, len(p.assets))
+	for _, id := range ids {
+		if a, ok := p.assets[id]; ok {
+			cpy[id] = a
+		}
+	}
 	return cpy, nil
 }
 
