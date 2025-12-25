@@ -11,6 +11,12 @@ import (
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
+	"github.com/w-h-a/gomento/internal/util"
+)
+
+const (
+	defaultMessagesLimit        = 20
+	defaultAssetPublicUrlExpire = 15 * time.Minute
 )
 
 type V1Service struct {
@@ -83,6 +89,85 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 	}
 
 	return msg, nil
+}
+
+func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMessagesOutput, error) {
+	var afterT time.Time
+	var afterId uuid.UUID
+	var err error
+
+	if len(in.Cursor) > 0 {
+		afterT, afterId, err = util.DecodeCursor(in.Cursor)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode cursor: %w", err)
+		}
+	}
+
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultMessagesLimit
+	}
+
+	msgs, err := s.persister.GetMessages(
+		ctx,
+		in.SessionId,
+		persister.WithLimit(limit+1),
+		persister.WithAfterCreatedAt(afterT),
+		persister.WithAfterId(afterId),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &GetMessagesOutput{
+		Items:   msgs,
+		HasMore: false,
+	}
+
+	if len(msgs) > limit {
+		out.HasMore = true
+		out.Items = msgs[:limit]
+		last := out.Items[len(out.Items)-1]
+		out.NextCursor = util.EncodeCursor(last.CreatedAt, last.Id)
+	}
+
+	if !in.WithAssetPublicUrl {
+		return out, nil
+	}
+
+	out.PublicUrls = map[uuid.UUID]PublicUrl{}
+
+	var assetIds []uuid.UUID
+	for _, m := range out.Items {
+		for _, p := range m.Parts {
+			if p.AssetId != nil {
+				assetIds = append(assetIds, *p.AssetId)
+			}
+		}
+	}
+
+	assets, err := s.persister.GetAssets(ctx, assetIds)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch assets: %w", err)
+	}
+
+	expire := in.AssetExpire
+	if expire == 0 {
+		expire = defaultAssetPublicUrlExpire
+	}
+
+	for id, asset := range assets {
+		url, err := s.filer.PresignGet(ctx, asset.Path, expire)
+		if err != nil {
+			return nil, fmt.Errorf("presign failed for asset %s: %w", id, err)
+		}
+		out.PublicUrls[id] = PublicUrl{
+			Url:      url,
+			ExpireAt: time.Now().Add(expire),
+		}
+	}
+
+	return out, nil
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
