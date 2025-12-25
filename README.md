@@ -42,24 +42,27 @@ graph TD
     Agent -- "1. Push Chat Logs & Assets" --> API
     API -- "2. Upload Assets" --> MinIO
     API -- "3. Save" --> Postgres
-    API -- "4. Produce Task" --> Queue
+    API -- "4. Persist Task" --> Postgres
+    API -- "5. Produce Task" --> Queue
     
     %% Flow 2: Distillation
-    Queue -- "5. Consume" --> Worker
-    Worker -- "6. Fetch Context" --> Postgres
-    Worker -- "7. Distill (Extract SOP)" --> LLM
-    Worker -- "8. Save Skill/Vector" --> Postgres
+    Queue -- "6. Consume" --> Worker
+    Worker -- "7. Update Task (Running)" --> Postgres
+    Worker -- "8. Fetch Context" --> Postgres
+    Worker -- "9. Distill (Extract SOP)" --> LLM
+    Worker -- "10. Save Skill/Vector" --> Postgres
+    Worker -- "11. Update Task" --> Postgres
 
     %% Flow 3: Retrieval (Skills)
-    Agent -- "9. Ask: 'How do I fix Redis?'" --> API
-    API -- "10. Vector Search" --> Postgres
-    API -- "11. Return SOP" --> Agent
+    Agent -- "12. Ask: 'How do I fix Redis?'" --> API
+    API -- "13. Vector Search" --> Postgres
+    API -- "14. Return SOP" --> Agent
 
     %% Flow 4: Retrieval (Messages + Assets)
-    Agent -- "12. Get History (w/ Assets)" --> API
-    API -- "13. Fetch Messages" --> Postgres
-    API -- "14. Presign URLs" --> MinIO
-    API -- "15. Return History" --> Agent
+    Agent -- "15. Get History (w/ Assets)" --> API
+    API -- "16. Fetch Messages" --> Postgres
+    API -- "17. Presign URLs" --> MinIO
+    API -- "18. Return History" --> Agent
 ```
 
 ### ER Diagram
@@ -95,9 +98,20 @@ erDiagram
         TIMESTAMPTZ created_at
     }
 
+    TASKS {
+        UUID id PK
+        UUID session_id FK
+        INT order "Order of task execution within a session"
+        JSON data "Task-specific payload"
+        VARCHAR status "pending|running|success|failed"
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
     MESSAGES {
         UUID id PK
         UUID session_id FK
+        UUID tasks_id FK "Nullable"
         UUID parent_id FK "Nullable, self-reference"
         VARCHAR role "'user' or 'assistant'"
         JSONB parts "Stores [{'type':'text'}, {'type':'image'}]"
@@ -127,6 +141,9 @@ erDiagram
     SPACES |o--o{ SESSIONS : ""
     
     SESSIONS ||--|{ MESSAGES : ""
+    SESSIONS ||--|{ TASKS : ""
+
+    TASKS |o--o{ MESSAGES : ""
 
     MESSAGES ||--|{ MESSAGE_ASSETS : ""
     ASSETS ||--|{ MESSAGE_ASSETS : ""
