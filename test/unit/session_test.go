@@ -270,7 +270,6 @@ func TestFinishSession_Publishes(t *testing.T) {
 	// Assert: State
 	assert.Len(t, d.Tasks(), 1)
 	task := d.Tasks()[0]
-	assert.Equal(t, v1.TaskTypeDistill, task.Type)
-	assert.Equal(t, sessionId, task.Payload.SessionId)
-	assert.Equal(t, v1.TaskStatusPending, task.Payload.TaskStatus)
+	assert.Equal(t, v1.TaskStatusPending, task.Status)
+	assert.Equal(t, sessionId, task.SessionId)
 }

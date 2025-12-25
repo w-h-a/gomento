@@ -1,0 +1,2 @@
+ALTER TABLE messages DROP COLUMN task_id;
+DROP TABLE IF EXISTS tasks;

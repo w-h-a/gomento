@@ -2,9 +2,11 @@ package v1worker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/distiller"
@@ -28,21 +30,45 @@ func (s *V1Service) Close(ctx context.Context) error {
 }
 
 func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
-	if task.Type != v1.TaskTypeDistill {
-		return fmt.Errorf("unknown task type")
+	// TODO: mark as running
+
+	var payload v1.TaskPayload
+	if err := json.Unmarshal(task.Data, &payload); err != nil {
+		// TODO: mark as failed
+		return fmt.Errorf("invalid task data: %w", err)
 	}
 
-	msgs, err := s.persister.GetMessages(ctx, task.Payload.SessionId)
+	if payload.Type != v1.TaskTypeDistill {
+		// TODO: mark as failed
+		return fmt.Errorf("unknown task type: %s", payload.Type)
+	}
+
+	if err := s.processDistill(ctx, payload.SessionId); err != nil {
+		// TODO: mark as failed
+		return err
+	}
+
+	// TODO: mark as success
+	slog.InfoContext(ctx, "task success", "task_id", task.Id)
+
+	return nil
+}
+
+func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) error {
+	msgs, err := s.persister.GetMessages(ctx, sessionId)
 	if err != nil {
 		return err
 	}
 
-	sess, err := s.persister.GetSession(ctx, task.Payload.SessionId)
+	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
 		return err
 	}
 
 	skill, err := s.distiller.Distill(ctx, msgs)
+	if err != nil {
+		return err
+	}
 
 	skill.SpaceId = sess.SpaceId
 

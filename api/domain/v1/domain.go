@@ -1,9 +1,19 @@
 package v1
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	TaskTypeDistill = "distill_session"
+
+	TaskStatusPending = "pending"
+	TaskStatusRunning = "running"
+	TaskStatusSuccess = "success"
+	TaskStatusFailed  = "failed"
 )
 
 type Project struct {
@@ -24,6 +34,23 @@ type Session struct {
 	ProjectId uuid.UUID `json:"project_id"`
 	SpaceId   uuid.UUID `json:"space_id"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type Task struct {
+	Id        uuid.UUID       `json:"id"`
+	SessionId uuid.UUID       `json:"session_id"`
+	TaskOrder int             `json:"task_order"`
+	Data      json.RawMessage `json:"data"`
+	Status    string          `json:"status"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+type TaskPayload struct {
+	Type            string    `json:"type"`
+	SessionId       uuid.UUID `json:"session_id"`
+	TaskName        string    `json:"task_name"`
+	TaskDescription string    `json:"task_description"`
 }
 
 type Message struct {
@@ -60,30 +87,4 @@ type Skill struct {
 	SOP       string    `json:"sop"`
 	Embedding []float32 `json:"embedding"`
 	CreatedAt time.Time `json:"created_at"`
-}
-
-type TaskStatus string
-
-const (
-	TaskTypeDistill = "distill_session"
-
-	TaskStatusPending TaskStatus = "pending"
-	TaskStatusRunning TaskStatus = "running"
-	TaskStatusSuccess TaskStatus = "success"
-	TaskStatusFailed  TaskStatus = "failed"
-)
-
-type Task struct {
-	Id        uuid.UUID `json:"id"`
-	Type      string    `json:"type"`
-	Payload   Payload   `json:"payload"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-type Payload struct {
-	SessionId       uuid.UUID   `json:"session_id"`
-	TaskName        string      `json:"task_name"`
-	TaskDescription string      `json:"task_description"`
-	TaskStatus      TaskStatus  `json:"task_status"`
-	MessageIds      []uuid.UUID `json:"message_ids"`
 }

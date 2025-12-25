@@ -2,6 +2,7 @@ package v1session
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -171,18 +172,28 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
-	payload := v1.Payload{
+	payload := v1.TaskPayload{
+		Type:            v1.TaskTypeDistill,
 		SessionId:       sessionId,
 		TaskName:        "Distill Session",
 		TaskDescription: fmt.Sprintf("Distilling session %s", sessionId),
-		TaskStatus:      v1.TaskStatusPending,
 	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
 	task := &v1.Task{
 		Id:        uuid.New(),
-		Type:      v1.TaskTypeDistill,
-		Payload:   payload,
-		CreatedAt: time.Now(),
+		SessionId: sessionId,
+		TaskOrder: 1,
+		Data:      data,
+		Status:    v1.TaskStatusPending,
 	}
+
+	// TODO: create task
+
 	return s.dispatcher.Publish(ctx, task, dispatcher.PublishWithQueue(s.qname))
 }
 
