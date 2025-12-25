@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -15,6 +16,7 @@ import (
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
+	"github.com/w-h-a/gomento/internal/util"
 )
 
 func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
@@ -128,6 +130,129 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	assert.Equal(t, msg1.Id, stored[0].Id)
 	assert.Equal(t, msg2.Id, stored[1].Id)
 	assert.Equal(t, msg1.Id, *stored[1].ParentId)
+}
+
+func TestGetMessages_PaginationLogic(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, d, u, "worker-queue")
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	for i := range 3 {
+		msg := &v1.Message{
+			Id:        uuid.New(),
+			SessionId: sessionId,
+			Role:      "user",
+			Parts:     []v1.Part{{Type: "text", Text: "Hi"}},
+			CreatedAt: time.Now().Add(time.Duration(i) * time.Minute),
+		}
+		p.CreateMessageWithAssets(ctx, msg, nil)
+	}
+
+	// Act
+	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId: sessionId,
+		Limit:     2,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out.Items, 2)
+	assert.True(t, out.HasMore)
+	assert.NotEmpty(t, out.NextCursor)
+	assert.NotEqual(t, "", out.NextCursor)
+}
+
+func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, u, "worker-queue")
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	assetId := uuid.New()
+	asset := &v1.Asset{
+		Id:        assetId,
+		Container: "my-bucket",
+		Path:      "logs/crash.txt",
+	}
+
+	msg := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "file", AssetId: &assetId}},
+		CreatedAt: time.Now(),
+	}
+
+	p.CreateMessageWithAssets(ctx, msg, map[int]*v1.Asset{0: asset})
+
+	// Act
+	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId:          sessionId,
+		Limit:              10,
+		WithAssetPublicUrl: true,
+		AssetExpire:        time.Hour,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out.Items, 1)
+	assert.Len(t, out.PublicUrls, 1)
+
+	generatedUrl := out.PublicUrls[assetId]
+	assert.Equal(t, "https://mock/logs/crash.txt?expire=3600000000000", generatedUrl.Url)
+}
+
+func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, u, "worker-queue")
+
+	ctx := context.Background()
+
+	// Act
+	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId: uuid.New(),
+		Limit:     10,
+		Cursor:    "this-is-garbage-base64",
+	})
+
+	// Assert
+	assert.Error(t, err)
+	assert.Nil(t, out)
+	assert.ErrorIs(t, err, util.ErrInvalidCursor)
+}
+
+func TestGetMessages_HandlesEmpty(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, u, "worker-queue")
+
+	ctx := context.Background()
+
+	// Act
+	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId: uuid.New(),
+		Limit:     10,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Empty(t, out.Items)
+	assert.False(t, out.HasMore)
+	assert.Empty(t, out.NextCursor)
 }
 
 func TestFinishSession_Publishes(t *testing.T) {
