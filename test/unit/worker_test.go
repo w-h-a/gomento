@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -24,7 +25,6 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-
 	disp := v1mockdispatcher.NewV1Dispatcher()
 
 	expectedTrigger := "how to fix nginx"
@@ -41,7 +41,6 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 
 	sessionId := uuid.New()
 	spaceId := uuid.New()
-
 	ctx := context.Background()
 
 	err := p.CreateSession(ctx, &v1.Session{
@@ -83,11 +82,16 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 	)
 	require.NoError(t, err)
 
+	payload := v1.TaskPayload{
+		Type:      v1.TaskTypeDistill,
+		SessionId: sessionId,
+	}
+	data, _ := json.Marshal(payload)
 	task := &v1.Task{
-		Type: v1.TaskTypeDistill,
-		Payload: v1.Payload{
-			SessionId: sessionId,
-		},
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Data:      data,
+		Status:    v1.TaskStatusPending,
 	}
 
 	// Act
@@ -123,10 +127,15 @@ func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
 		v1mockdistiller.NewV1Distiller(),
 	)
 
+	payload := v1.TaskPayload{Type: "unknown"}
+	data, _ := json.Marshal(payload)
+	task := &v1.Task{
+		Id:   uuid.New(),
+		Data: data,
+	}
+
 	// Act
-	err := svc.ProcessTask(context.Background(), &v1.Task{
-		Type: "unknown_type",
-	})
+	err := svc.ProcessTask(context.Background(), task)
 
 	// Assert
 	assert.Error(t, err)
