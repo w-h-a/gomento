@@ -2,8 +2,10 @@ package v1session
 
 import (
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -91,6 +93,45 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, msg)
+}
+
+func (h *v1Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["session_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
+		return
+	}
+
+	var limit int
+	if l := r.URL.Query().Get("limit"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	cursor := r.URL.Query().Get("cursor")
+	withPublicUrl := r.URL.Query().Get("with_asset_public_url") == "true"
+
+	out, err := h.service.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId:          id,
+		Limit:              limit,
+		Cursor:             cursor,
+		WithAssetPublicUrl: withPublicUrl,
+	})
+	if err != nil {
+		if errors.Is(err, util.ErrInvalidCursor) {
+			httphandler.WrtErr(w, http.StatusBadRequest, "Invalid cursor format")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
 func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {

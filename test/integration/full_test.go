@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -91,6 +92,39 @@ func TestAPI_FullUserFlow(t *testing.T) {
 
 	assert.NotEmpty(t, dupAssetId)
 	assert.Equal(t, assetId, dupAssetId, "Content-addressed storage should return same Asset ID for duplicate content")
+
+	// Act
+	page1 := getMessages(t, client, baseURL, sessionId, 1, "", true)
+
+	// Assert
+	assert.Len(t, page1.Items, 1)
+	assert.Equal(t, msg4["id"], page1.Items[0].Id.String())
+	assert.True(t, page1.HasMore)
+	assert.NotEmpty(t, page1.NextCursor)
+
+	var assetIdStr string
+	for _, p := range page1.Items[0].Parts {
+		if p.AssetId != nil {
+			assetIdStr = p.AssetId.String()
+			break
+		}
+	}
+	assert.NotEmpty(t, assetIdStr, "Message 4 should have an asset")
+
+	presigned, ok := page1.PublicUrls[uuid.MustParse(assetIdStr)]
+	assert.True(t, ok, "Public URL map should contain asset ID")
+	assert.NotEmpty(t, presigned.Url)
+	assert.Contains(t, presigned.Url, TEST_BUCKET)
+
+	// Act
+	page2 := getMessages(t, client, baseURL, sessionId, 10, page1.NextCursor, false)
+
+	// Assert
+	assert.Len(t, page2.Items, 3)
+	assert.False(t, page2.HasMore)
+	assert.Equal(t, msg3["id"], page2.Items[0].Id.String())
+	assert.Equal(t, msg2["id"], page2.Items[1].Id.String())
+	assert.Equal(t, msg1["id"], page2.Items[2].Id.String())
 
 	// Act
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
@@ -223,4 +257,28 @@ func sendMessage(
 	json.NewDecoder(resp.Body).Decode(&out)
 
 	return out
+}
+
+func getMessages(
+	t *testing.T,
+	client *http.Client,
+	baseURL string,
+	sessId string,
+	limit int,
+	cursor string,
+	withUrl bool,
+) v1session.GetMessagesOutput {
+	url := fmt.Sprintf("%s/api/v1/sessions/%s/messages?limit=%d&cursor=%s&with_asset_public_url=%v", baseURL, sessId, limit, cursor, withUrl)
+	req, _ := http.NewRequest("GET", url, nil)
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var res v1session.GetMessagesOutput
+	err = json.NewDecoder(resp.Body).Decode(&res)
+	require.NoError(t, err)
+
+	return res
 }

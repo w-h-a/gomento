@@ -12,7 +12,6 @@ type GetMessagesInput struct {
 	Limit              int
 	Cursor             string
 	WithAssetPublicUrl bool
-	AssetExpire        time.Duration
 }
 
 type GetMessagesOutput struct {
