@@ -295,6 +295,7 @@ func InitV1Router(ctx context.Context, proj *v1projectservice.V1Service, spac *v
 	sessionHandler := v1sessionhttphandler.NewV1Handler(sess)
 	v1.Methods("POST").Path("/sessions").HandlerFunc(sessionHandler.Create)
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
+	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.GetMessages)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
 
 	return v1, nil

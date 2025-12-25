@@ -199,16 +199,15 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 		SessionId:          sessionId,
 		Limit:              10,
 		WithAssetPublicUrl: true,
-		AssetExpire:        time.Hour,
 	})
 	require.NoError(t, err)
 
 	// Assert
 	assert.Len(t, out.Items, 1)
 	assert.Len(t, out.PublicUrls, 1)
-
-	generatedUrl := out.PublicUrls[assetId]
-	assert.Equal(t, "https://mock/logs/crash.txt?expire=3600000000000", generatedUrl.Url)
+	urlObj := out.PublicUrls[assetId]
+	assert.Contains(t, urlObj.Url, "https://mock/logs/crash.txt")
+	assert.WithinDuration(t, time.Now().Add(24*time.Hour), urlObj.ExpireAt, time.Minute)
 }
 
 func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {

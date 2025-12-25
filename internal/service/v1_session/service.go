@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultMessagesLimit        = 20
-	defaultAssetPublicUrlExpire = 15 * time.Minute
+	defaultMessagesLimit = 20
+
+	assetPublicUrlExpire = 24 * time.Hour
 )
 
 type V1Service struct {
@@ -108,6 +109,10 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 		limit = defaultMessagesLimit
 	}
 
+	if limit > 100 {
+		limit = 100
+	}
+
 	msgs, err := s.persister.GetMessages(
 		ctx,
 		in.SessionId,
@@ -151,19 +156,14 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 		return nil, fmt.Errorf("failed to fetch assets: %w", err)
 	}
 
-	expire := in.AssetExpire
-	if expire == 0 {
-		expire = defaultAssetPublicUrlExpire
-	}
-
 	for id, asset := range assets {
-		url, err := s.filer.PresignGet(ctx, asset.Path, expire)
+		url, err := s.filer.PresignGet(ctx, asset.Path, assetPublicUrlExpire)
 		if err != nil {
 			return nil, fmt.Errorf("presign failed for asset %s: %w", id, err)
 		}
 		out.PublicUrls[id] = PublicUrl{
 			Url:      url,
-			ExpireAt: time.Now().Add(expire),
+			ExpireAt: time.Now().Add(assetPublicUrlExpire),
 		}
 	}
 
