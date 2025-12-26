@@ -2,9 +2,14 @@ package persister
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+)
+
+var (
+	ErrSessionLocked = errors.New("session is locked by another task")
 )
 
 type V1Persister interface {
@@ -16,6 +21,8 @@ type V1Persister interface {
 	CreateSession(ctx context.Context, sess *v1.Session) error
 	GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error)
 	UpdateSession(ctx context.Context, sess *v1.Session) error
+
+	AcquireSessionLock(ctx context.Context, sessionId uuid.UUID, taskId uuid.UUID) error
 
 	CreateTask(ctx context.Context, t *v1.Task) error
 	UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error

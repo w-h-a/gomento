@@ -179,6 +179,52 @@ func TestProcessTask_ProcessingOrder(t *testing.T) {
 	assert.Equal(t, "Second Message", dist.History()[1].Parts[0].Text)
 }
 
+func TestProcessTask_EnforcesSessionLock(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockdistiller.NewV1Distiller())
+	ctx := context.Background()
+	sessionId := uuid.New()
+
+	ghostTask := &v1.Task{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Status:    v1.TaskStatusRunning,
+	}
+	p.CreateTask(ctx, ghostTask)
+
+	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	data, _ := json.Marshal(payload)
+	newTask := &v1.Task{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Data:      data,
+		Status:    v1.TaskStatusPending,
+	}
+	p.CreateTask(ctx, newTask)
+
+	// Act
+	err := s.ProcessTask(ctx, newTask)
+
+	// Assert: Should Fail due to Atomic Lock check
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "session")
+	assert.Contains(t, err.Error(), "locked")
+
+	// Assert: Should be Failed in DB
+	updated, _ := p.GetTask(ctx, newTask.Id)
+	assert.Equal(t, v1.TaskStatusFailed, updated.Status)
+
+	// Assert: Ghost task should be Running still
+	ghost, _ := p.GetTask(ctx, ghostTask.Id)
+	assert.Equal(t, v1.TaskStatusRunning, ghost.Status)
+}
+
 func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -222,8 +268,9 @@ func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
 	}
 
 	// Arrange
+	p := v1mockpersister.NewV1Persister()
 	svc := v1worker.NewV1Service(
-		v1mockpersister.NewV1Persister(),
+		p,
 		v1mockdispatcher.NewV1Dispatcher(),
 		v1mockdistiller.NewV1Distiller(),
 	)
@@ -231,9 +278,13 @@ func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
 	payload := v1.TaskPayload{Type: "unknown"}
 	data, _ := json.Marshal(payload)
 	task := &v1.Task{
-		Id:   uuid.New(),
-		Data: data,
+		Id:        uuid.New(),
+		SessionId: uuid.New(),
+		Data:      data,
+		Status:    v1.TaskStatusPending,
 	}
+
+	p.CreateTask(context.Background(), task)
 
 	// Act
 	err := svc.ProcessTask(context.Background(), task)
