@@ -25,8 +25,8 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		ProjectId string `json:"project_id"`
-		SpaceId   string `json:"space_id"`
+		ProjectId string  `json:"project_id"`
+		SpaceId   *string `json:"space_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -35,10 +35,19 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pid, err := uuid.Parse(req.ProjectId)
-	sid, err := uuid.Parse(req.SpaceId)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid UUIDs")
 		return
+	}
+
+	var sid *uuid.UUID
+	if req.SpaceId != nil && len(*req.SpaceId) > 0 {
+		id, err := uuid.Parse(*req.SpaceId)
+		if err != nil {
+			httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+			return
+		}
+		sid = &id
 	}
 
 	s, err := h.service.Create(ctx, pid, sid)

@@ -61,19 +61,12 @@ func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) e
 	return nil
 }
 
-func (p *v1MockPersister) Sessions() map[uuid.UUID]*v1.Session {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Session, len(p.sessions))
-	maps.Copy(cpy, p.sessions)
-	return cpy
-}
-
 func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	if s, ok := p.sessions[id]; ok {
-		return s, nil
+		cpy := *s
+		return &cpy, nil
 	}
 	return nil, nil
 }
@@ -103,7 +96,8 @@ func (p *v1MockPersister) GetTask(ctx context.Context, id uuid.UUID) (*v1.Task, 
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	if t, ok := p.tasks[id]; ok {
-		return t, nil
+		cpy := *t
+		return &cpy, nil
 	}
 	return nil, nil
 }

@@ -45,7 +45,7 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 
 	err := p.CreateSession(ctx, &v1.Session{
 		Id:        sessionId,
-		SpaceId:   spaceId,
+		SpaceId:   &spaceId,
 		CreatedAt: time.Now(),
 	})
 	require.NoError(t, err)
@@ -93,7 +93,6 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 		Data:      data,
 		Status:    v1.TaskStatusPending,
 	}
-
 	err = p.CreateTask(ctx, task)
 	require.NoError(t, err)
 
@@ -119,6 +118,42 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 
 	// 2. The Skill was correctly linked to the Session's Space
 	assert.Equal(t, spaceId, savedSkill.SpaceId)
+}
+
+func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	dist := v1mockdistiller.NewV1Distiller()
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), dist)
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	require.NoError(t, p.CreateSession(ctx, &v1.Session{
+		Id:        sessionId,
+		SpaceId:   nil,
+		CreatedAt: time.Now(),
+	}))
+
+	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	data, _ := json.Marshal(payload)
+	task := &v1.Task{Id: uuid.New(), SessionId: sessionId, Data: data, Status: v1.TaskStatusPending}
+	p.CreateTask(ctx, task)
+
+	// Act
+	err := s.ProcessTask(ctx, task)
+	require.NoError(t, err)
+
+	// Assert
+	updatedTask, err := p.GetTask(ctx, task.Id)
+	assert.NoError(t, err)
+	assert.Equal(t, v1.TaskStatusSuccess, updatedTask.Status)
+	assert.Len(t, p.Skills(), 0)
 }
 
 func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {

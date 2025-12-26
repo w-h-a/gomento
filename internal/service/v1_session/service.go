@@ -29,7 +29,7 @@ type V1Service struct {
 	qname      string
 }
 
-func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId uuid.UUID) (*v1.Session, error) {
+func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId *uuid.UUID) (*v1.Session, error) {
 	p := &v1.Session{
 		Id:        uuid.New(),
 		ProjectId: projectId,

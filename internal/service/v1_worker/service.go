@@ -54,12 +54,17 @@ func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
 }
 
 func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) error {
-	msgs, err := s.persister.GetMessages(ctx, sessionId)
+	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
 		return err
 	}
 
-	sess, err := s.persister.GetSession(ctx, sessionId)
+	if sess.SpaceId == nil {
+		slog.InfoContext(ctx, "session has no space, skipping distillation", "session_id", sessionId)
+		return nil
+	}
+
+	msgs, err := s.persister.GetMessages(ctx, sessionId)
 	if err != nil {
 		return err
 	}
@@ -69,7 +74,7 @@ func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) err
 		return err
 	}
 
-	skill.SpaceId = sess.SpaceId
+	skill.SpaceId = *sess.SpaceId
 
 	slog.InfoContext(ctx, "saving skill", "trigger", skill.Trigger)
 
