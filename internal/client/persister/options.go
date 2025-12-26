@@ -32,10 +32,18 @@ func NewOptions(opts ...Option) Options {
 	return options
 }
 
+type SortOrder int
+
+const (
+	SortOrderDesc SortOrder = iota
+	SortOrderAsc
+)
+
 type GetMessagesOption func(*GetMessagesOptions)
 
 type GetMessagesOptions struct {
 	Limit          int
+	Sort           SortOrder
 	AfterCreatedAt time.Time
 	AfterId        uuid.UUID // just for sort tie-breaking in cases where created at is identical
 	Context        context.Context
@@ -44,6 +52,12 @@ type GetMessagesOptions struct {
 func WithLimit(limit int) GetMessagesOption {
 	return func(gmo *GetMessagesOptions) {
 		gmo.Limit = limit
+	}
+}
+
+func WithSort(sort SortOrder) GetMessagesOption {
+	return func(gmo *GetMessagesOptions) {
+		gmo.Sort = sort
 	}
 }
 
@@ -61,6 +75,7 @@ func WithAfterId(id uuid.UUID) GetMessagesOption {
 
 func NewGetMessagesOptions(opts ...GetMessagesOption) GetMessagesOptions {
 	options := GetMessagesOptions{
+		Sort:    SortOrderDesc,
 		Context: context.Background(),
 	}
 

@@ -214,12 +214,20 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, op
 	argIdx := 2
 
 	if !options.AfterCreatedAt.IsZero() && options.AfterId != uuid.Nil {
-		query += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id < $%d))`, argIdx, argIdx, argIdx+1)
+		if options.Sort == persister.SortOrderDesc {
+			query += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id < $%d))`, argIdx, argIdx, argIdx+1)
+		} else {
+			query += fmt.Sprintf(` AND (created_at > $%d OR (created_at = $%d AND id > $%d))`, argIdx, argIdx, argIdx+1)
+		}
 		args = append(args, options.AfterCreatedAt, options.AfterId)
 		argIdx += 2
 	}
 
-	query += ` ORDER BY created_at DESC, id DESC`
+	sortDir := "DESC"
+	if options.Sort == persister.SortOrderAsc {
+		sortDir = "ASC"
+	}
+	query += fmt.Sprintf(` ORDER BY created_at %s, id %s`, sortDir, sortDir)
 
 	if options.Limit > 0 {
 		query += fmt.Sprintf(` LIMIT $%d`, argIdx)

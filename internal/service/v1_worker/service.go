@@ -64,7 +64,11 @@ func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) err
 		return nil
 	}
 
-	msgs, err := s.persister.GetMessages(ctx, sessionId)
+	msgs, err := s.persister.GetMessages(
+		ctx,
+		sessionId,
+		persister.WithSort(persister.SortOrderAsc),
+	)
 	if err != nil {
 		return err
 	}
