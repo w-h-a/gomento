@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"sort"
 	"sync"
 	"time"
 
@@ -138,9 +139,25 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.GetMessagesOption) ([]v1.Message, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
+
+	options := persister.NewGetMessagesOptions(opts...)
+
 	msgs := p.messages[sessionId]
+
 	cpy := make([]v1.Message, len(msgs))
 	copy(cpy, msgs)
+
+	sort.Slice(cpy, func(i, j int) bool {
+		if options.Sort == persister.SortOrderAsc {
+			return cpy[i].CreatedAt.Before(cpy[j].CreatedAt)
+		}
+		return cpy[i].CreatedAt.After(cpy[j].CreatedAt)
+	})
+
+	if options.Limit > 0 && len(cpy) > options.Limit {
+		cpy = cpy[:options.Limit]
+	}
+
 	return cpy, nil
 }
 
