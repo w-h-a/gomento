@@ -120,6 +120,65 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 	assert.Equal(t, spaceId, savedSkill.SpaceId)
 }
 
+func TestProcessTask_ProcessingOrder(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	disp := v1mockdispatcher.NewV1Dispatcher()
+	dist := v1mockdistiller.NewV1Distiller(
+		v1mockdistiller.WithSkillRsp(&v1.Skill{
+			Id:        uuid.New(),
+			Trigger:   "test",
+			SOP:       "test",
+			Embedding: []float32{0.1},
+		}),
+	)
+
+	s := v1worker.NewV1Service(p, disp, dist)
+
+	sessionId := uuid.New()
+	spaceId := uuid.New()
+	ctx := context.Background()
+
+	require.NoError(t, p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId}))
+
+	msg1 := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "First Message"}},
+		CreatedAt: time.Now().Add(-10 * time.Minute),
+	}
+	p.CreateMessageWithAssets(ctx, msg1, nil)
+
+	msg2 := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "assistant",
+		Parts:     []v1.Part{{Type: "text", Text: "Second Message"}},
+		CreatedAt: time.Now().Add(-5 * time.Minute),
+	}
+	p.CreateMessageWithAssets(ctx, msg2, nil)
+
+	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	data, _ := json.Marshal(payload)
+	task := &v1.Task{Id: uuid.New(), SessionId: sessionId, Data: data, Status: v1.TaskStatusPending}
+	p.CreateTask(ctx, task)
+
+	// Act
+	err := s.ProcessTask(ctx, task)
+	require.NoError(t, err)
+
+	// Assert: Check the Observable Behavior
+	assert.Len(t, dist.History(), 2)
+	assert.Equal(t, "First Message", dist.History()[0].Parts[0].Text)
+	assert.Equal(t, "Second Message", dist.History()[1].Parts[0].Text)
+}
+
 func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
