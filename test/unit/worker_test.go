@@ -94,13 +94,20 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 		Status:    v1.TaskStatusPending,
 	}
 
+	err = p.CreateTask(ctx, task)
+	require.NoError(t, err)
+
 	// Act
 	err = s.ProcessTask(ctx, task)
 	require.NoError(t, err)
 
 	// Assert State
-	assert.Len(t, p.Skills(), 1)
+	updatedTask, err := p.GetTask(ctx, task.Id)
+	assert.NoError(t, err)
+	assert.Equal(t, v1.TaskStatusSuccess, updatedTask.Status)
 
+	// Assert State
+	assert.Len(t, p.Skills(), 1)
 	var savedSkill *v1.Skill
 	for _, s := range p.Skills() {
 		savedSkill = s

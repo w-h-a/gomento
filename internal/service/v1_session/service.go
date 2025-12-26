@@ -192,7 +192,9 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 		Status:    v1.TaskStatusPending,
 	}
 
-	// TODO: create task
+	if err := s.persister.CreateTask(ctx, task); err != nil {
+		return fmt.Errorf("failed to persist task: %w", err)
+	}
 
 	return s.dispatcher.Publish(ctx, task, dispatcher.PublishWithQueue(s.qname))
 }

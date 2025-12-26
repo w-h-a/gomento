@@ -135,14 +135,16 @@ func TestAPI_FullUserFlow(t *testing.T) {
 	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
 
 	assert.Eventually(t, func() bool {
-		var count int
-		db.QueryRow("SELECT count(*) FROM skills WHERE space_id = $1", spaceId).Scan(&count)
-		return count == 1
-	}, 5*time.Second, 100*time.Millisecond, "Skill should be created in DB")
+		var status string
+		err := db.QueryRow("SELECT status FROM tasks WHERE session_id = $1", sessionId).Scan(&status)
+		return err == nil && status == "success"
+	}, 5*time.Second, 100*time.Millisecond, "Persistent Task should succeed")
 
-	var trigger string
-	db.QueryRow("SELECT trigger FROM skills WHERE space_id = $1", spaceId).Scan(&trigger)
-	assert.Equal(t, "how to restart redis", trigger)
+	assert.Eventually(t, func() bool {
+		var trigger string
+		err := db.QueryRow("SELECT trigger FROM skills WHERE space_id = $1", spaceId).Scan(&trigger)
+		return err == nil && trigger == "how to restart redis"
+	}, 5*time.Second, 100*time.Millisecond, "Skill should be created in DB")
 }
 
 func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {

@@ -30,28 +30,27 @@ func (s *V1Service) Close(ctx context.Context) error {
 }
 
 func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
-	// TODO: mark as running
+	s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusRunning)
 
 	var payload v1.TaskPayload
 	if err := json.Unmarshal(task.Data, &payload); err != nil {
-		// TODO: mark as failed
+		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
 		return fmt.Errorf("invalid task data: %w", err)
 	}
 
 	if payload.Type != v1.TaskTypeDistill {
-		// TODO: mark as failed
+		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
 		return fmt.Errorf("unknown task type: %s", payload.Type)
 	}
 
 	if err := s.processDistill(ctx, payload.SessionId); err != nil {
-		// TODO: mark as failed
+		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
 		return err
 	}
 
-	// TODO: mark as success
 	slog.InfoContext(ctx, "task success", "task_id", task.Id)
 
-	return nil
+	return s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusSuccess)
 }
 
 func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) error {
