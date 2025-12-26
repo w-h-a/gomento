@@ -48,17 +48,26 @@ func TestAPI_FullUserFlow(t *testing.T) {
 	// Arrange
 	client, baseURL, db, s3Client := setupIntegrationServer(t)
 
-	projResp := createJson(t, client, baseURL+"/api/v1/projects", map[string]string{"name": "Integration Proj"})
-	projId := projResp["id"].(string)
+	projRsp := createJson(t, client, baseURL+"/api/v1/projects", map[string]any{"name": "Integration Proj"})
+	projId := projRsp["id"].(string)
 	require.NotEmpty(t, projId)
 
-	spaceResp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]string{"project_id": projId, "name": "Integration Space"})
-	spaceId := spaceResp["id"].(string)
+	sessRsp := createJson(t, client, baseURL+"/api/v1/sessions", map[string]any{
+		"project_id": projId,
+		"space_id":   nil,
+	})
+	sessionId := sessRsp["id"].(string)
+	require.NotEmpty(t, sessionId)
+
+	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"project_id": projId, "name": "Integration Space"})
+	spaceId := spaceRsp["id"].(string)
 	require.NotEmpty(t, spaceId)
 
-	sessResp := createJson(t, client, baseURL+"/api/v1/sessions", map[string]string{"project_id": projId, "space_id": spaceId})
-	sessionId := sessResp["id"].(string)
-	require.NotEmpty(t, sessionId)
+	connectReq, _ := json.Marshal(map[string]string{"space_id": spaceId})
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/connect_to_space", baseURL, sessionId), bytes.NewBuffer(connectReq))
+	rsp, err := client.Do(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
 
 	// Act
 	msg1 := sendMessage(t, client, baseURL, sessionId, "user", "Hello World", nil)
@@ -127,12 +136,12 @@ func TestAPI_FullUserFlow(t *testing.T) {
 	assert.Equal(t, msg1["id"], page2.Items[2].Id.String())
 
 	// Act
-	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
-	resp, err := client.Do(req)
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
+	rsp, err = client.Do(req)
 	require.NoError(t, err)
 
 	// Assert
-	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
 
 	assert.Eventually(t, func() bool {
 		var status string
@@ -199,7 +208,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	return ts.Client(), ts.URL, db, s3Client
 }
 
-func createJson(t *testing.T, client *http.Client, url string, data map[string]string) map[string]any {
+func createJson(t *testing.T, client *http.Client, url string, data map[string]any) map[string]any {
 	body, _ := json.Marshal(data)
 	rsp, err := client.Post(url, "application/json", bytes.NewBuffer(body))
 	require.NoError(t, err)

@@ -41,6 +41,29 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId *uu
 	return p, nil
 }
 
+func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spaceId uuid.UUID) error {
+	sess, err := s.persister.GetSession(ctx, sessionId)
+	if err != nil {
+		return err
+	}
+
+	if sess == nil {
+		return ErrSessionNotFound
+	}
+
+	space, err := s.persister.GetSpace(ctx, spaceId)
+	if err != nil {
+		return err
+	}
+	if space == nil {
+		return ErrSpaceNotFound
+	}
+
+	sess.SpaceId = &spaceId
+
+	return s.persister.UpdateSession(ctx, sess)
+}
+
 func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Message, error) {
 	assets := map[int]*v1.Asset{}
 	finalParts := []v1.Part{}

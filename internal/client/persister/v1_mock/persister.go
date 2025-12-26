@@ -46,12 +46,14 @@ func (p *v1MockPersister) CreateSpace(ctx context.Context, space *v1.Space) erro
 	return nil
 }
 
-func (p *v1MockPersister) Spaces() map[uuid.UUID]*v1.Space {
+func (p *v1MockPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Space, len(p.spaces))
-	maps.Copy(cpy, p.spaces)
-	return cpy
+	if s, ok := p.spaces[id]; ok {
+		cpy := *s
+		return &cpy, nil
+	}
+	return nil, nil
 }
 
 func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
@@ -69,6 +71,15 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 		return &cpy, nil
 	}
 	return nil, nil
+}
+
+func (p *v1MockPersister) UpdateSession(ctx context.Context, sess *v1.Session) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if existing, ok := p.sessions[sess.Id]; ok {
+		existing.SpaceId = sess.SpaceId
+	}
+	return nil
 }
 
 func (p *v1MockPersister) CreateTask(ctx context.Context, t *v1.Task) error {
