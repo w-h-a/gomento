@@ -75,7 +75,11 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			Meta: pIn.Meta,
 		}
 
-		if pIn.Type == "text" {
+		if domainPart.Meta == nil {
+			domainPart.Meta = map[string]any{}
+		}
+
+		if pIn.Type == "text" || pIn.Type == "tool-call" || pIn.Type == "tool-result" {
 			finalParts = append(finalParts, domainPart)
 			continue
 		}
@@ -95,6 +99,8 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		}
 
 		asset.Id = uuid.New()
+
+		domainPart.Meta["filename"] = fh.Filename
 
 		currentPartIdx := len(finalParts)
 		assets[currentPartIdx] = asset

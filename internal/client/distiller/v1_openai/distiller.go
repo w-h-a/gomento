@@ -72,20 +72,9 @@ func (d *v1OpenaiDistiller) userPrompt(history []v1.Message) string {
 	sb.WriteString("Analyze the following conversation and extract the core automation skill:\n\n")
 
 	for _, msg := range history {
-		role := strings.ToUpper(msg.Role)
-
-		var contentBuilder strings.Builder
-
 		for _, part := range msg.Parts {
-			if part.Type == "text" {
-				contentBuilder.WriteString(part.Text)
-			}
-		}
-
-		text := contentBuilder.String()
-
-		if len(text) > 0 {
-			fmt.Fprintf(&sb, "%s: %s\n", role, text)
+			line := d.packMessageLine(msg.Role, part)
+			sb.WriteString(line + "\n")
 		}
 	}
 
@@ -100,6 +89,37 @@ A Skill consists of two parts:
 
 Output MUST be a valid JSON object with keys "trigger" and "sop".
 Example: {"trigger": "every morning at 9am", "sop": "check jira for high priority bugs"}`
+}
+
+func (d *v1OpenaiDistiller) packMessageLine(role string, part v1.Part) string {
+	switch part.Type {
+	case "text":
+		return fmt.Sprintf("<%s> %s", role, part.Text)
+	case "file":
+		name := "unknown_file"
+		if part.Meta != nil {
+			if n, ok := part.Meta["filename"].(string); ok {
+				name = n
+			}
+		}
+		return fmt.Sprintf("<%s> [file: %s]", role, name)
+	case "tool-call":
+		funcName := "unknown_tool"
+		params := "{}"
+		if part.Meta != nil {
+			if n, ok := part.Meta["function_name"].(string); ok {
+				funcName = n
+			}
+			if p, ok := part.Meta["parameters"]; ok {
+				params = fmt.Sprintf("%v", p)
+			}
+		}
+		return fmt.Sprintf("<%s> USE TOOL %s, WITH PARAMS %s", role, funcName, params)
+	case "tool-result":
+		return fmt.Sprintf("<%s> TOOL RESULT: %s", role, part.Text)
+	default:
+		return fmt.Sprintf("<%s> [%s]", role, part.Type)
+	}
 }
 
 func NewV1Distiller(opts ...distiller.Option) distiller.V1Distiller {
