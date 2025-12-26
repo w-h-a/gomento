@@ -302,6 +302,50 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 	assert.WithinDuration(t, time.Now().Add(24*time.Hour), urlObj.ExpireAt, time.Minute)
 }
 
+func TestGetMessages_ReturnsDescendingOrder(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, d, f, "q")
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	p.CreateMessageWithAssets(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Old"}},
+		CreatedAt: time.Now().Add(-10 * time.Minute),
+	}, nil)
+
+	p.CreateMessageWithAssets(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "New"}},
+		CreatedAt: time.Now().Add(-5 * time.Minute),
+	}, nil)
+
+	// Act
+	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+		SessionId: sessionId,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+
+	// Assert: Check the Observable Behavior
+	assert.Len(t, out.Items, 2)
+	assert.Equal(t, "New", out.Items[0].Parts[0].Text)
+	assert.Equal(t, "Old", out.Items[1].Parts[0].Text)
+}
+
 func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
