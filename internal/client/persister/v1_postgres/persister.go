@@ -66,6 +66,47 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 	return &sess, nil
 }
 
+func (p *v1PGPersister) CreateTask(ctx context.Context, t *v1.Task) error {
+	query := `INSERT INTO tasks (id, session_id, task_order, data, status) 
+              VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`
+
+	return p.conn.QueryRowContext(ctx, query,
+		t.Id, t.SessionId, t.TaskOrder, t.Data, t.Status,
+	).Scan(&t.CreatedAt, &t.UpdatedAt)
+}
+
+func (p *v1PGPersister) UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error {
+	query := `UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2`
+
+	res, err := p.conn.ExecContext(ctx, query, status, id)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (p *v1PGPersister) GetTask(ctx context.Context, id uuid.UUID) (*v1.Task, error) {
+	query := `SELECT id, session_id, task_order, data, status, created_at, updated_at FROM tasks WHERE id = $1`
+	var t v1.Task
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(
+		&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status, &t.CreatedAt, &t.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
 	tx, err := p.conn.BeginTx(ctx, nil)
 	if err != nil {
