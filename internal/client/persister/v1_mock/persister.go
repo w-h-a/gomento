@@ -2,8 +2,10 @@ package v1mock
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
@@ -15,6 +17,7 @@ type v1MockPersister struct {
 	projects map[uuid.UUID]*v1.Project
 	spaces   map[uuid.UUID]*v1.Space
 	sessions map[uuid.UUID]*v1.Session
+	tasks    map[uuid.UUID]*v1.Task
 	messages map[uuid.UUID][]v1.Message
 	assets   map[uuid.UUID]*v1.Asset
 	skills   map[uuid.UUID]*v1.Skill
@@ -71,6 +74,36 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 	defer p.mtx.RUnlock()
 	if s, ok := p.sessions[id]; ok {
 		return s, nil
+	}
+	return nil, nil
+}
+
+func (p *v1MockPersister) CreateTask(ctx context.Context, t *v1.Task) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	t.CreatedAt = time.Now()
+	t.UpdatedAt = time.Now()
+	p.tasks[t.Id] = t
+	return nil
+}
+
+func (p *v1MockPersister) UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	t, ok := p.tasks[id]
+	if !ok {
+		return errors.New("task not found")
+	}
+	t.Status = status
+	t.UpdatedAt = time.Now()
+	return nil
+}
+
+func (p *v1MockPersister) GetTask(ctx context.Context, id uuid.UUID) (*v1.Task, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	if t, ok := p.tasks[id]; ok {
+		return t, nil
 	}
 	return nil, nil
 }
@@ -141,6 +174,7 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 		projects: map[uuid.UUID]*v1.Project{},
 		spaces:   map[uuid.UUID]*v1.Space{},
 		sessions: map[uuid.UUID]*v1.Session{},
+		tasks:    map[uuid.UUID]*v1.Task{},
 		messages: map[uuid.UUID][]v1.Message{},
 		assets:   map[uuid.UUID]*v1.Asset{},
 		skills:   map[uuid.UUID]*v1.Skill{},
