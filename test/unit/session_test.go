@@ -20,6 +20,82 @@ import (
 	"github.com/w-h-a/gomento/internal/util"
 )
 
+func TestConnectToSpace_Success(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+
+	validSpaceId := uuid.New()
+	ctx := context.Background()
+
+	sess, err := s.Create(ctx, uuid.New(), nil)
+	require.NoError(t, err)
+
+	p.CreateSpace(ctx, &v1.Space{Id: validSpaceId, Name: "My Space"})
+
+	// Act
+	err = s.ConnectToSpace(ctx, sess.Id, validSpaceId)
+	require.NoError(t, err)
+
+	// Assert
+	updated, err := p.GetSession(ctx, sess.Id)
+	assert.NoError(t, err)
+	assert.NotNil(t, updated.SpaceId)
+	assert.Equal(t, validSpaceId, *updated.SpaceId)
+}
+
+func TestConnectToSpace_FailsForMissingSession(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+
+	ctx := context.Background()
+
+	// Act
+	err := s.ConnectToSpace(ctx, uuid.New(), uuid.New())
+
+	// Assert: Should Fail
+	assert.ErrorIs(t, err, v1session.ErrSessionNotFound)
+}
+
+func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+
+	randomSpaceId := uuid.New()
+	ctx := context.Background()
+
+	sess, err := s.Create(ctx, uuid.New(), nil)
+	require.NoError(t, err)
+
+	// Act
+	err = s.ConnectToSpace(ctx, sess.Id, randomSpaceId)
+
+	// Assert: Should Fail
+	assert.ErrorIs(t, err, v1session.ErrSpaceNotFound)
+
+	// Assert: State No Update
+	current, err := p.GetSession(ctx, sess.Id)
+	assert.NoError(t, err)
+	assert.Nil(t, current.SpaceId)
+}
+
 func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -147,8 +223,8 @@ func TestGetMessages_PaginationLogic(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -187,8 +263,8 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -235,8 +311,8 @@ func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	ctx := context.Background()
 
@@ -262,8 +338,8 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, u, "worker-queue")
+	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
+	s := v1session.NewV1Service(p, d, f, "worker-queue")
 
 	ctx := context.Background()
 
@@ -289,8 +365,8 @@ func TestCreateSession_SupportsNullableSpace(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
-	u := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, d, u, "q")
+	f := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, d, f, "q")
 
 	ctx := context.Background()
 

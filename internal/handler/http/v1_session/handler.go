@@ -59,6 +59,47 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusCreated, s)
 }
 
+func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	sessionId, err := uuid.Parse(vars["session_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
+		return
+	}
+
+	var req struct {
+		SpaceId string `json:"space_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	sid, err := uuid.Parse(req.SpaceId)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	if err := h.service.ConnectToSpace(ctx, sessionId, sid); err != nil {
+		if errors.Is(err, v1session.ErrSessionNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
+			return
+		}
+		if errors.Is(err, v1session.ErrSpaceNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "Space not found")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, map[string]string{"status": "connected"})
+}
+
 func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)

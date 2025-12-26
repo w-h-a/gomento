@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -51,6 +52,21 @@ func (p *v1PGPersister) CreateSpace(ctx context.Context, space *v1.Space) error 
 	return p.conn.QueryRowContext(ctx, query, space.Id, space.ProjectId, space.Name).Scan(&space.CreatedAt)
 }
 
+func (p *v1PGPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error) {
+	query := `SELECT id, project_id, name, created_at FROM spaces WHERE id = $1`
+	var s v1.Space
+
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(&s.Id, &s.ProjectId, &s.Name, &s.CreatedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &s, nil
+}
+
 func (p *v1PGPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
 	query := `INSERT INTO sessions (id, project_id, space_id) VALUES ($1, $2, $3) RETURNING created_at;`
 	return p.conn.QueryRowContext(ctx, query, sess.Id, sess.ProjectId, sess.SpaceId).Scan(&sess.CreatedAt)
@@ -63,6 +79,9 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 
 	err := p.conn.QueryRowContext(ctx, query, id).Scan(&sess.Id, &sess.ProjectId, &spaceId, &sess.CreatedAt)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
 		return nil, err
 	}
 
@@ -71,6 +90,17 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 	}
 
 	return &sess, nil
+}
+
+func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) error {
+	query := `UPDATE sessions SET space_id = $1 WHERE id = $2`
+
+	_, err := p.conn.ExecContext(ctx, query, sess.SpaceId, sess.Id)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (p *v1PGPersister) CreateTask(ctx context.Context, t *v1.Task) error {
@@ -85,18 +115,9 @@ func (p *v1PGPersister) CreateTask(ctx context.Context, t *v1.Task) error {
 func (p *v1PGPersister) UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error {
 	query := `UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2`
 
-	res, err := p.conn.ExecContext(ctx, query, status, id)
+	_, err := p.conn.ExecContext(ctx, query, status, id)
 	if err != nil {
 		return err
-	}
-
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rowsAffected == 0 {
-		return sql.ErrNoRows
 	}
 
 	return nil

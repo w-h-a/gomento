@@ -33,7 +33,8 @@ func TestCreate_PersistsSpaceLinkedToProject(t *testing.T) {
 	assert.Equal(t, projectId, space.ProjectId)
 
 	// Assert: State
-	savedSpace := p.Spaces()[space.Id]
+	savedSpace, err := p.GetSpace(ctx, space.Id)
+	assert.NoError(t, err)
 	assert.NotNil(t, savedSpace)
 	assert.Equal(t, "DevOps Space", savedSpace.Name)
 }
