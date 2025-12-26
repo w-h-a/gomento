@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"mime/multipart"
 	"os"
 	"testing"
@@ -82,6 +83,11 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 }
 
 func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -133,6 +139,11 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 }
 
 func TestGetMessages_PaginationLogic(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -168,6 +179,11 @@ func TestGetMessages_PaginationLogic(t *testing.T) {
 }
 
 func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -211,6 +227,11 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 }
 
 func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -233,6 +254,11 @@ func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 }
 
 func TestGetMessages_HandlesEmpty(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -255,6 +281,11 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 }
 
 func TestFinishSession_Publishes(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
@@ -267,9 +298,21 @@ func TestFinishSession_Publishes(t *testing.T) {
 	err := s.FinishSession(ctx, sessionId)
 	require.NoError(t, err)
 
-	// Assert: State
+	// Assert: Queue
 	assert.Len(t, d.Tasks(), 1)
-	task := d.Tasks()[0]
-	assert.Equal(t, v1.TaskStatusPending, task.Status)
-	assert.Equal(t, sessionId, task.SessionId)
+	qtask := d.Tasks()[0]
+	assert.Equal(t, v1.TaskStatusPending, qtask.Status)
+	assert.Equal(t, sessionId, qtask.SessionId)
+
+	// Assert: DB
+	dbTask, err := p.GetTask(ctx, qtask.Id)
+	assert.NoError(t, err)
+	assert.Equal(t, sessionId, dbTask.SessionId)
+	assert.Equal(t, v1.TaskStatusPending, dbTask.Status)
+
+	var payload v1.TaskPayload
+	json.Unmarshal(dbTask.Data, &payload)
+
+	assert.Equal(t, v1.TaskTypeDistill, payload.Type)
+	assert.Equal(t, sessionId, payload.SessionId)
 }
