@@ -30,10 +30,10 @@ type Space struct {
 }
 
 type Session struct {
-	Id        uuid.UUID `json:"id"`
-	ProjectId uuid.UUID `json:"project_id"`
-	SpaceId   uuid.UUID `json:"space_id"`
-	CreatedAt time.Time `json:"created_at"`
+	Id        uuid.UUID  `json:"id"`
+	ProjectId uuid.UUID  `json:"project_id"`
+	SpaceId   *uuid.UUID `json:"space_id"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type Task struct {

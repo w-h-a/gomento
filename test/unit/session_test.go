@@ -280,6 +280,31 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 	assert.Empty(t, out.NextCursor)
 }
 
+func TestCreateSession_SupportsNullableSpace(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	u := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, d, u, "q")
+
+	ctx := context.Background()
+
+	// Act
+	sess, err := s.Create(ctx, uuid.New(), nil)
+	require.NoError(t, err)
+
+	// Assert DB State
+	assert.Nil(t, sess.SpaceId)
+	persisted, err := p.GetSession(ctx, sess.Id)
+	assert.Nil(t, err)
+	assert.Nil(t, persisted.SpaceId)
+}
+
 func TestFinishSession_Publishes(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")

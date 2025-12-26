@@ -59,10 +59,17 @@ func (p *v1PGPersister) CreateSession(ctx context.Context, sess *v1.Session) err
 func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
 	query := `SELECT id, project_id, space_id, created_at FROM sessions WHERE id = $1;`
 	var sess v1.Session
-	err := p.conn.QueryRowContext(ctx, query, id).Scan(&sess.Id, &sess.ProjectId, &sess.SpaceId, &sess.CreatedAt)
+	var spaceId uuid.NullUUID
+
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(&sess.Id, &sess.ProjectId, &spaceId, &sess.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
+	if spaceId.Valid {
+		sess.SpaceId = &spaceId.UUID
+	}
+
 	return &sess, nil
 }
 
