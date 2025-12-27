@@ -92,6 +92,13 @@ Example: {"trigger": "every morning at 9am", "sop": "check jira for high priorit
 }
 
 func (d *v1OpenaiDistiller) packMessageLine(role string, part v1.Part) string {
+	switch role {
+	case "assistant":
+		role = "agent"
+	case "tool", "function":
+		role = "agent_action"
+	}
+
 	switch part.Type {
 	case "text":
 		return fmt.Sprintf("<%s> %s", role, part.Text)
@@ -106,14 +113,21 @@ func (d *v1OpenaiDistiller) packMessageLine(role string, part v1.Part) string {
 	case "tool-call":
 		funcName := "unknown_tool"
 		params := "{}"
+
 		if part.Meta != nil {
-			if n, ok := part.Meta["function_name"].(string); ok {
+			if n, ok := part.Meta["tool_name"].(string); ok {
+				funcName = n
+			} else if n, ok := part.Meta["function_name"].(string); ok {
 				funcName = n
 			}
-			if p, ok := part.Meta["parameters"]; ok {
+
+			if p, ok := part.Meta["arguments"]; ok {
+				params = fmt.Sprintf("%v", p)
+			} else if p, ok := part.Meta["parameters"]; ok {
 				params = fmt.Sprintf("%v", p)
 			}
 		}
+
 		return fmt.Sprintf("<%s> USE TOOL %s, WITH PARAMS %s", role, funcName, params)
 	case "tool-result":
 		return fmt.Sprintf("<%s> TOOL RESULT: %s", role, part.Text)
