@@ -49,6 +49,24 @@ type Session struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
+const (
+	TaskStatusPending = "pending"
+	TaskStatusRunning = "running"
+	TaskStatusSuccess = "success"
+	TaskStatusFailed  = "failed"
+)
+
+type Task struct {
+	Id          uuid.UUID       `json:"id"`
+	SessionId   uuid.UUID       `json:"session_id"`
+	TaskOrder   int             `json:"task_order"`
+	IsAnalyzing bool            `json:"is_analyzing"`
+	Data        json.RawMessage `json:"data"`
+	Status      string          `json:"status"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
+}
+
 type Message struct {
 	Id        uuid.UUID  `json:"id"`
 	SessionId uuid.UUID  `json:"session_id"`
