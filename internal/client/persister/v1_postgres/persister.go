@@ -103,6 +103,37 @@ func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) err
 	return nil
 }
 
+func (p *v1PGPersister) AcquireSessionLock(ctx context.Context, sessionId uuid.UUID, taskId uuid.UUID) error {
+	query := `
+		UPDATE tasks 
+		SET status = 'running', updated_at = NOW()
+		WHERE id = $1 
+		  AND session_id = $2
+		  AND NOT EXISTS (
+			SELECT 1 FROM tasks 
+			WHERE session_id = $2 
+			  AND status = 'running' 
+			  AND id != $1
+		  )
+	`
+
+	result, err := p.conn.ExecContext(ctx, query, taskId, sessionId)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return persister.ErrSessionLocked
+	}
+
+	return nil
+}
+
 func (p *v1PGPersister) CreateTask(ctx context.Context, t *v1.Task) error {
 	query := `INSERT INTO tasks (id, session_id, task_order, data, status) 
               VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`

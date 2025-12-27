@@ -3,6 +3,7 @@ package v1mock
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"sort"
 	"sync"
@@ -81,6 +82,25 @@ func (p *v1MockPersister) UpdateSession(ctx context.Context, sess *v1.Session) e
 		existing.SpaceId = sess.SpaceId
 	}
 	return nil
+}
+
+func (p *v1MockPersister) AcquireSessionLock(ctx context.Context, sessionId uuid.UUID, taskId uuid.UUID) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	for _, t := range p.tasks {
+		if t.SessionId == sessionId && t.Id != taskId && t.Status == "running" {
+			return persister.ErrSessionLocked
+		}
+	}
+
+	if t, ok := p.tasks[taskId]; ok {
+		t.Status = "running"
+		t.UpdatedAt = time.Now()
+		return nil
+	}
+
+	return fmt.Errorf("task not found")
 }
 
 func (p *v1MockPersister) CreateTask(ctx context.Context, t *v1.Task) error {

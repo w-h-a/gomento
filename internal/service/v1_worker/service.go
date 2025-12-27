@@ -3,6 +3,7 @@ package v1worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -30,7 +31,14 @@ func (s *V1Service) Close(ctx context.Context) error {
 }
 
 func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
-	s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusRunning)
+	if err := s.persister.AcquireSessionLock(ctx, task.SessionId, task.Id); err != nil {
+		if errors.Is(err, persister.ErrSessionLocked) {
+			slog.WarnContext(ctx, "session is locked by another task", "session_id", task.SessionId, "task_id", task.Id)
+			s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
+			return fmt.Errorf("session %s is locked", task.SessionId)
+		}
+		return fmt.Errorf("failed to acquire session lock: %w", err)
+	}
 
 	var payload v1.TaskPayload
 	if err := json.Unmarshal(task.Data, &payload); err != nil {
@@ -49,7 +57,6 @@ func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
 	}
 
 	slog.InfoContext(ctx, "task success", "task_id", task.Id)
-
 	return s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusSuccess)
 }
 
