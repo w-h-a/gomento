@@ -1,4 +1,4 @@
-package distiller
+package interpreter
 
 import "context"
 

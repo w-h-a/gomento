@@ -10,16 +10,16 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
-	"github.com/w-h-a/gomento/internal/client/distiller"
+	"github.com/w-h-a/gomento/internal/client/interpreter"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
 )
 
 type V1Service struct {
 	*service.Service
-	dispatcher dispatcher.V1Dispatcher
-	persister  persister.V1Persister
-	distiller  distiller.V1Distiller
+	dispatcher  dispatcher.V1Dispatcher
+	persister   persister.V1Persister
+	interpreter interpreter.V1Interpreter
 }
 
 func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Job) error, qname string) error {
@@ -45,7 +45,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 		return fmt.Errorf("unknown job type: %s", job.Type)
 	}
 
-	var payload v1.DistillJobPayload
+	var payload v1.JobPayload
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 		return fmt.Errorf("invalid job payload: %w", err)
@@ -80,7 +80,7 @@ func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) err
 		return err
 	}
 
-	skill, err := s.distiller.Distill(ctx, msgs)
+	skill, err := s.interpreter.Distill(ctx, msgs)
 	if err != nil {
 		return err
 	}
@@ -94,14 +94,14 @@ func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) err
 
 func NewV1Service(
 	p persister.V1Persister,
-	disp dispatcher.V1Dispatcher,
-	dist distiller.V1Distiller,
+	d dispatcher.V1Dispatcher,
+	i interpreter.V1Interpreter,
 ) *V1Service {
 	s := service.New()
 	return &V1Service{
-		Service:    s,
-		persister:  p,
-		dispatcher: disp,
-		distiller:  dist,
+		Service:     s,
+		persister:   p,
+		dispatcher:  d,
+		interpreter: i,
 	}
 }

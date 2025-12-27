@@ -9,6 +9,7 @@ import (
 
 const (
 	JobTypeDistill = "distill_session"
+	JobTypeExtract = "extract_session"
 
 	JobStatusPending = "pending"
 	JobStatusRunning = "running"
@@ -25,7 +26,7 @@ type Job struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
-type DistillJobPayload struct {
+type JobPayload struct {
 	SessionId uuid.UUID `json:"session_id"`
 }
 
@@ -57,14 +58,14 @@ const (
 )
 
 type Task struct {
-	Id          uuid.UUID       `json:"id"`
-	SessionId   uuid.UUID       `json:"session_id"`
-	TaskOrder   int             `json:"task_order"`
-	IsAnalyzing bool            `json:"is_analyzing"`
-	Data        json.RawMessage `json:"data"`
-	Status      string          `json:"status"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	Id        uuid.UUID       `json:"id"`
+	SessionId uuid.UUID       `json:"session_id"`
+	TaskOrder int             `json:"task_order"`
+	IsThought bool            `json:"is_thought"`
+	Data      json.RawMessage `json:"data"`
+	Status    string          `json:"status"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }
 
 type Message struct {

@@ -453,7 +453,7 @@ func TestFinishSession_Publishes(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, v1.JobStatusPending, dbTask.Status)
 
-	var payload v1.DistillJobPayload
+	var payload v1.JobPayload
 	json.Unmarshal(dbTask.Payload, &payload)
 
 	assert.Equal(t, sessionId, payload.SessionId)
