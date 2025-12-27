@@ -145,9 +145,18 @@ func TestAPI_FullUserFlow(t *testing.T) {
 
 	assert.Eventually(t, func() bool {
 		var status string
-		err := db.QueryRow("SELECT status FROM tasks WHERE session_id = $1", sessionId).Scan(&status)
+		err := db.QueryRow(`
+        SELECT status 
+        FROM jobs 
+        WHERE payload->>'session_id' = $1 
+          AND type = 'distill_session' 
+        ORDER BY created_at DESC 
+        LIMIT 1`,
+			sessionId,
+		).Scan(&status)
+
 		return err == nil && status == "success"
-	}, 5*time.Second, 100*time.Millisecond, "Persistent Task should succeed")
+	}, 5*time.Second, 100*time.Millisecond, "Distill Job should succeed")
 
 	assert.Eventually(t, func() bool {
 		var trigger string
@@ -193,7 +202,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	sessSvc := v1session.NewV1Service(p, disp, f, "worker")
 	workerSvc := v1worker.NewV1Service(p, disp, dist)
 
-	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessTask, "worker") }()
+	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "worker") }()
 
 	r, _ := cmd.InitV1Router(
 		ctx,

@@ -135,7 +135,7 @@ func Run(c *cli.Context) error {
 			errCh <- workerService.Run(
 				stopChannels["worker"],
 				func() error {
-					return workerService.Subscribe(ctx, workerService.ProcessTask, qname)
+					return workerService.Subscribe(ctx, workerService.ProcessJob, qname)
 				},
 				func(ctx context.Context) error {
 					return workerService.Close(ctx)

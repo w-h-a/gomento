@@ -22,7 +22,7 @@ type V1Service struct {
 	distiller  distiller.V1Distiller
 }
 
-func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Task) error, qname string) error {
+func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Job) error, qname string) error {
 	return s.dispatcher.Subscribe(ctx, cb, dispatcher.SubscribeWithQueue(qname))
 }
 
@@ -30,34 +30,34 @@ func (s *V1Service) Close(ctx context.Context) error {
 	return s.dispatcher.Close(ctx)
 }
 
-func (s *V1Service) ProcessTask(ctx context.Context, task *v1.Task) error {
-	if err := s.persister.AcquireSessionLock(ctx, task.SessionId, task.Id); err != nil {
-		if errors.Is(err, persister.ErrSessionLocked) {
-			slog.WarnContext(ctx, "session is locked by another task", "session_id", task.SessionId, "task_id", task.Id)
-			s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
-			return fmt.Errorf("session %s is locked", task.SessionId)
+func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
+	if err := s.persister.AcquireJobLock(ctx, job.Id); err != nil {
+		if errors.Is(err, persister.ErrJobLocked) {
+			slog.WarnContext(ctx, "job locked", "job_id", job.Id)
+			return nil
 		}
-		return fmt.Errorf("failed to acquire session lock: %w", err)
+		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		return fmt.Errorf("failed to acquire job lock: %w", err)
 	}
 
-	var payload v1.TaskPayload
-	if err := json.Unmarshal(task.Data, &payload); err != nil {
-		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
-		return fmt.Errorf("invalid task data: %w", err)
+	if job.Type != v1.JobTypeDistill {
+		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		return fmt.Errorf("unknown job type: %s", job.Type)
 	}
 
-	if payload.Type != v1.TaskTypeDistill {
-		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
-		return fmt.Errorf("unknown task type: %s", payload.Type)
+	var payload v1.DistillJobPayload
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		return fmt.Errorf("invalid job payload: %w", err)
 	}
 
 	if err := s.processDistill(ctx, payload.SessionId); err != nil {
-		s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusFailed)
+		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 		return err
 	}
 
-	slog.InfoContext(ctx, "task success", "task_id", task.Id)
-	return s.persister.UpdateTaskStatus(ctx, task.Id, v1.TaskStatusSuccess)
+	slog.InfoContext(ctx, "job success", "job_id", job.Id)
+	return s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusSuccess)
 }
 
 func (s *V1Service) processDistill(ctx context.Context, sessionId uuid.UUID) error {

@@ -11,14 +11,14 @@ import (
 
 type v1MemDispatcher struct {
 	options dispatcher.Options
-	queues  map[string]chan *v1.Task
+	queues  map[string]chan *v1.Job
 	mtx     sync.RWMutex
 	exit    chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
 }
 
-func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, task *v1.Task) error, opts ...dispatcher.SubscribeOption) error {
+func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, job *v1.Job) error, opts ...dispatcher.SubscribeOption) error {
 	options := dispatcher.NewSubscribeOptions(opts...)
 
 	// span
@@ -27,7 +27,7 @@ func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Con
 	d.mtx.Lock()
 	q, ok := d.queues[options.Queue]
 	if !ok {
-		q = make(chan *v1.Task, 100)
+		q = make(chan *v1.Job, 100)
 		d.queues[options.Queue] = q
 	}
 	d.mtx.Unlock()
@@ -52,22 +52,22 @@ func (d *v1MemDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Con
 	return nil
 }
 
-func (d *v1MemDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...dispatcher.PublishOption) error {
+func (d *v1MemDispatcher) Publish(ctx context.Context, job *v1.Job, opts ...dispatcher.PublishOption) error {
 	options := dispatcher.NewPublishOptions(opts...)
 
 	// span
-	slog.InfoContext(ctx, "publishing to queue", "data", *task, "queue", options.Queue)
+	slog.InfoContext(ctx, "publishing to queue", "data", *job, "queue", options.Queue)
 
 	d.mtx.Lock()
 	q, ok := d.queues[options.Queue]
 	if !ok {
-		q = make(chan *v1.Task, 100)
+		q = make(chan *v1.Job, 100)
 		d.queues[options.Queue] = q
 	}
 	d.mtx.Unlock()
 
 	select {
-	case q <- task:
+	case q <- job:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -98,13 +98,13 @@ func (d *v1MemDispatcher) Close(ctx context.Context) error {
 	}
 }
 
-func (d *v1MemDispatcher) Queue(name string) <-chan *v1.Task {
+func (d *v1MemDispatcher) Queue(name string) <-chan *v1.Job {
 	d.mtx.Lock()
 	defer d.mtx.Unlock()
 
 	q, ok := d.queues[name]
 	if !ok {
-		q = make(chan *v1.Task, 100)
+		q = make(chan *v1.Job, 100)
 		d.queues[name] = q
 	}
 
@@ -116,7 +116,7 @@ func NewV1Dispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
 
 	d := &v1MemDispatcher{
 		options: options,
-		queues:  map[string]chan *v1.Task{},
+		queues:  map[string]chan *v1.Job{},
 		mtx:     sync.RWMutex{},
 		exit:    make(chan struct{}),
 		wg:      sync.WaitGroup{},

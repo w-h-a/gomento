@@ -7,8 +7,8 @@ import (
 )
 
 type V1Dispatcher interface {
-	Subscribe(ctx context.Context, cb func(ctx context.Context, task *v1.Task) error, opts ...SubscribeOption) error
-	Publish(ctx context.Context, task *v1.Task, opts ...PublishOption) error
+	Subscribe(ctx context.Context, cb func(ctx context.Context, job *v1.Job) error, opts ...SubscribeOption) error
+	Publish(ctx context.Context, job *v1.Job, opts ...PublishOption) error
 	CheckHealth(ctx context.Context) error
 	Close(ctx context.Context) error
 }

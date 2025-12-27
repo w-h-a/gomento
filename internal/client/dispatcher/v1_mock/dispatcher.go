@@ -10,18 +10,18 @@ import (
 
 type v1MockDispatcher struct {
 	options dispatcher.Options
-	tasks   []*v1.Task
+	jobs    []*v1.Job
 	mtx     sync.RWMutex
 }
 
-func (d *v1MockDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, task *v1.Task) error, opts ...dispatcher.SubscribeOption) error {
+func (d *v1MockDispatcher) Subscribe(ctx context.Context, cb func(ctx context.Context, job *v1.Job) error, opts ...dispatcher.SubscribeOption) error {
 	return nil
 }
 
-func (d *v1MockDispatcher) Publish(ctx context.Context, task *v1.Task, opts ...dispatcher.PublishOption) error {
+func (d *v1MockDispatcher) Publish(ctx context.Context, job *v1.Job, opts ...dispatcher.PublishOption) error {
 	d.mtx.Lock()
 	defer d.mtx.Unlock()
-	d.tasks = append(d.tasks, task)
+	d.jobs = append(d.jobs, job)
 	return nil
 }
 
@@ -33,11 +33,11 @@ func (d *v1MockDispatcher) Close(ctx context.Context) error {
 	return nil
 }
 
-func (d *v1MockDispatcher) Tasks() []*v1.Task {
+func (d *v1MockDispatcher) Jobs() []*v1.Job {
 	d.mtx.RLock()
 	defer d.mtx.RUnlock()
-	cpy := make([]*v1.Task, len(d.tasks))
-	copy(cpy, d.tasks)
+	cpy := make([]*v1.Job, len(d.jobs))
+	copy(cpy, d.jobs)
 	return cpy
 }
 
@@ -46,7 +46,7 @@ func NewV1Dispatcher(opts ...dispatcher.Option) *v1MockDispatcher {
 
 	d := &v1MockDispatcher{
 		options: options,
-		tasks:   []*v1.Task{},
+		jobs:    []*v1.Job{},
 		mtx:     sync.RWMutex{},
 	}
 

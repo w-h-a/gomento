@@ -444,20 +444,17 @@ func TestFinishSession_Publishes(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert: Queue
-	assert.Len(t, d.Tasks(), 1)
-	qtask := d.Tasks()[0]
-	assert.Equal(t, v1.TaskStatusPending, qtask.Status)
-	assert.Equal(t, sessionId, qtask.SessionId)
+	assert.Len(t, d.Jobs(), 1)
+	qtask := d.Jobs()[0]
+	assert.Equal(t, v1.JobStatusPending, qtask.Status)
 
 	// Assert: DB
-	dbTask, err := p.GetTask(ctx, qtask.Id)
+	dbTask := p.Jobs()[qtask.Id]
 	assert.NoError(t, err)
-	assert.Equal(t, sessionId, dbTask.SessionId)
-	assert.Equal(t, v1.TaskStatusPending, dbTask.Status)
+	assert.Equal(t, v1.JobStatusPending, dbTask.Status)
 
-	var payload v1.TaskPayload
-	json.Unmarshal(dbTask.Data, &payload)
+	var payload v1.DistillJobPayload
+	json.Unmarshal(dbTask.Payload, &payload)
 
-	assert.Equal(t, v1.TaskTypeDistill, payload.Type)
 	assert.Equal(t, sessionId, payload.SessionId)
 }
