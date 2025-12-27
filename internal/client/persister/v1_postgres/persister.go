@@ -103,21 +103,27 @@ func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) err
 	return nil
 }
 
-func (p *v1PGPersister) AcquireSessionLock(ctx context.Context, sessionId uuid.UUID, taskId uuid.UUID) error {
+func (p *v1PGPersister) CreateJob(ctx context.Context, job *v1.Job) error {
 	query := `
-		UPDATE tasks 
-		SET status = 'running', updated_at = NOW()
-		WHERE id = $1 
-		  AND session_id = $2
-		  AND NOT EXISTS (
-			SELECT 1 FROM tasks 
-			WHERE session_id = $2 
-			  AND status = 'running' 
-			  AND id != $1
-		  )
+		INSERT INTO jobs (id, type, payload, status) 
+		VALUES ($1, $2, $3, $4) 
+		RETURNING created_at, updated_at
 	`
+	return p.conn.QueryRowContext(
+		ctx, query,
+		job.Id, job.Type, job.Payload, job.Status,
+	).Scan(&job.CreatedAt, &job.UpdatedAt)
+}
 
-	result, err := p.conn.ExecContext(ctx, query, taskId, sessionId)
+func (p *v1PGPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
+	// Atomic Lock: Update status to 'running' ONLY IF it is currently 'pending'.
+	// This prevents multiple workers from picking up the same job.
+	query := `
+		UPDATE jobs 
+		SET status = 'running', updated_at = NOW()
+		WHERE id = $1 AND status = 'pending'
+	`
+	result, err := p.conn.ExecContext(ctx, query, jobId)
 	if err != nil {
 		return err
 	}
@@ -128,42 +134,16 @@ func (p *v1PGPersister) AcquireSessionLock(ctx context.Context, sessionId uuid.U
 	}
 
 	if rows == 0 {
-		return persister.ErrSessionLocked
+		return persister.ErrJobLocked
 	}
 
 	return nil
 }
 
-func (p *v1PGPersister) CreateTask(ctx context.Context, t *v1.Task) error {
-	query := `INSERT INTO tasks (id, session_id, task_order, data, status) 
-              VALUES ($1, $2, $3, $4, $5) RETURNING created_at, updated_at`
-
-	return p.conn.QueryRowContext(ctx, query,
-		t.Id, t.SessionId, t.TaskOrder, t.Data, t.Status,
-	).Scan(&t.CreatedAt, &t.UpdatedAt)
-}
-
-func (p *v1PGPersister) UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error {
-	query := `UPDATE tasks SET status = $1, updated_at = NOW() WHERE id = $2`
-
-	_, err := p.conn.ExecContext(ctx, query, status, id)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (p *v1PGPersister) GetTask(ctx context.Context, id uuid.UUID) (*v1.Task, error) {
-	query := `SELECT id, session_id, task_order, data, status, created_at, updated_at FROM tasks WHERE id = $1`
-	var t v1.Task
-	err := p.conn.QueryRowContext(ctx, query, id).Scan(
-		&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status, &t.CreatedAt, &t.UpdatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
+func (p *v1PGPersister) UpdateJobStatus(ctx context.Context, jobId uuid.UUID, status string) error {
+	query := `UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2`
+	_, err := p.conn.ExecContext(ctx, query, status, jobId)
+	return err
 }
 
 func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {

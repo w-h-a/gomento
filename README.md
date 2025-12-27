@@ -42,16 +42,16 @@ graph TD
     Agent -- "1. Push Chat Logs & Assets" --> API
     API -- "2. Upload Assets" --> MinIO
     API -- "3. Save" --> Postgres
-    API -- "4. Persist Task" --> Postgres
-    API -- "5. Produce Task" --> Queue
+    API -- "4. Persist Job" --> Postgres
+    API -- "5. Produce Job" --> Queue
     
     %% Flow 2: Distillation
     Queue -- "6. Consume" --> Worker
-    Worker -- "7. Update Task (Running)" --> Postgres
+    Worker -- "7. Update Job (Running)" --> Postgres
     Worker -- "8. Fetch Context" --> Postgres
     Worker -- "9. Distill (Extract SOP)" --> LLM
     Worker -- "10. Save Skill/Vector" --> Postgres
-    Worker -- "11. Update Task" --> Postgres
+    Worker -- "11. Update Job" --> Postgres
 
     %% Flow 3: Retrieval (Skills)
     Agent -- "12. Ask: 'How do I fix Redis?'" --> API
@@ -101,7 +101,8 @@ erDiagram
     TASKS {
         UUID id PK
         UUID session_id FK
-        INT order "Order of task execution within a session"
+        INT task_order "Order of task execution within a session"
+        BOOLEAN is_analyzing "Whether or not this task is currently being analyzed by the worker/agent"
         JSON data "Task-specific payload"
         VARCHAR status "pending|running|success|failed"
         TIMESTAMPTZ created_at

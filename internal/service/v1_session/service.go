@@ -201,11 +201,8 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
-	payload := v1.TaskPayload{
-		Type:            v1.TaskTypeDistill,
-		SessionId:       sessionId,
-		TaskName:        "Distill Session",
-		TaskDescription: fmt.Sprintf("Distilling session %s", sessionId),
+	payload := v1.DistillJobPayload{
+		SessionId: sessionId,
 	}
 
 	data, err := json.Marshal(payload)
@@ -213,19 +210,18 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	task := &v1.Task{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		TaskOrder: 1,
-		Data:      data,
-		Status:    v1.TaskStatusPending,
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: data,
+		Status:  v1.JobStatusPending,
 	}
 
-	if err := s.persister.CreateTask(ctx, task); err != nil {
-		return fmt.Errorf("failed to persist task: %w", err)
+	if err := s.persister.CreateJob(ctx, job); err != nil {
+		return fmt.Errorf("failed to persist job: %w", err)
 	}
 
-	return s.dispatcher.Publish(ctx, task, dispatcher.PublishWithQueue(s.qname))
+	return s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.qname))
 }
 
 func NewV1Service(

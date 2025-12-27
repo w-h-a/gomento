@@ -82,28 +82,26 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	payload := v1.TaskPayload{
-		Type:      v1.TaskTypeDistill,
+	payload := v1.DistillJobPayload{
 		SessionId: sessionId,
 	}
 	data, _ := json.Marshal(payload)
-	task := &v1.Task{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		Data:      data,
-		Status:    v1.TaskStatusPending,
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: data,
+		Status:  v1.JobStatusPending,
 	}
-	err = p.CreateTask(ctx, task)
+	err = p.CreateJob(ctx, job)
 	require.NoError(t, err)
 
 	// Act
-	err = s.ProcessTask(ctx, task)
+	err = s.ProcessJob(ctx, job)
 	require.NoError(t, err)
 
 	// Assert State
-	updatedTask, err := p.GetTask(ctx, task.Id)
-	assert.NoError(t, err)
-	assert.Equal(t, v1.TaskStatusSuccess, updatedTask.Status)
+	updatedTask := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updatedTask.Status)
 
 	// Assert State
 	assert.Len(t, p.Skills(), 1)
@@ -164,13 +162,13 @@ func TestProcessTask_ProcessingOrder(t *testing.T) {
 	}
 	p.CreateMessageWithAssets(ctx, msg2, nil)
 
-	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	payload := v1.DistillJobPayload{SessionId: sessionId}
 	data, _ := json.Marshal(payload)
-	task := &v1.Task{Id: uuid.New(), SessionId: sessionId, Data: data, Status: v1.TaskStatusPending}
-	p.CreateTask(ctx, task)
+	job := &v1.Job{Id: uuid.New(), Type: v1.JobTypeDistill, Payload: data, Status: v1.JobStatusPending}
+	p.CreateJob(ctx, job)
 
 	// Act
-	err := s.ProcessTask(ctx, task)
+	err := s.ProcessJob(ctx, job)
 	require.NoError(t, err)
 
 	// Assert: Check the Observable Behavior
@@ -179,7 +177,7 @@ func TestProcessTask_ProcessingOrder(t *testing.T) {
 	assert.Equal(t, "Second Message", dist.History()[1].Parts[0].Text)
 }
 
-func TestProcessTask_EnforcesSessionLock(t *testing.T) {
+func TestProcessJob_EnforcesJobLock(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -188,41 +186,30 @@ func TestProcessTask_EnforcesSessionLock(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockdistiller.NewV1Distiller())
-	ctx := context.Background()
+
 	sessionId := uuid.New()
+	spaceId := uuid.New()
+	ctx := context.Background()
 
-	ghostTask := &v1.Task{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		Status:    v1.TaskStatusRunning,
-	}
-	p.CreateTask(ctx, ghostTask)
+	p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
 
-	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	payload := v1.DistillJobPayload{SessionId: sessionId}
 	data, _ := json.Marshal(payload)
-	newTask := &v1.Task{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		Data:      data,
-		Status:    v1.TaskStatusPending,
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: data,
+		Status:  v1.JobStatusRunning,
 	}
-	p.CreateTask(ctx, newTask)
+	p.CreateJob(ctx, job)
 
 	// Act
-	err := s.ProcessTask(ctx, newTask)
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
 
-	// Assert: Should Fail due to Atomic Lock check
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "session")
-	assert.Contains(t, err.Error(), "locked")
-
-	// Assert: Should be Failed in DB
-	updated, _ := p.GetTask(ctx, newTask.Id)
-	assert.Equal(t, v1.TaskStatusFailed, updated.Status)
-
-	// Assert: Ghost task should be Running still
-	ghost, _ := p.GetTask(ctx, ghostTask.Id)
-	assert.Equal(t, v1.TaskStatusRunning, ghost.Status)
+	// Assert
+	updated := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusRunning, updated.Status)
 }
 
 func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
@@ -245,19 +232,18 @@ func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
 		CreatedAt: time.Now(),
 	}))
 
-	payload := v1.TaskPayload{Type: v1.TaskTypeDistill, SessionId: sessionId}
+	payload := v1.DistillJobPayload{SessionId: sessionId}
 	data, _ := json.Marshal(payload)
-	task := &v1.Task{Id: uuid.New(), SessionId: sessionId, Data: data, Status: v1.TaskStatusPending}
-	p.CreateTask(ctx, task)
+	job := &v1.Job{Id: uuid.New(), Type: v1.JobTypeDistill, Payload: data, Status: v1.JobStatusPending}
+	p.CreateJob(ctx, job)
 
 	// Act
-	err := s.ProcessTask(ctx, task)
+	err := s.ProcessJob(ctx, job)
 	require.NoError(t, err)
 
 	// Assert
-	updatedTask, err := p.GetTask(ctx, task.Id)
-	assert.NoError(t, err)
-	assert.Equal(t, v1.TaskStatusSuccess, updatedTask.Status)
+	updatedTask := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updatedTask.Status)
 	assert.Len(t, p.Skills(), 0)
 }
 
@@ -275,21 +261,21 @@ func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
 		v1mockdistiller.NewV1Distiller(),
 	)
 
-	payload := v1.TaskPayload{Type: "unknown"}
+	payload := v1.DistillJobPayload{}
 	data, _ := json.Marshal(payload)
-	task := &v1.Task{
-		Id:        uuid.New(),
-		SessionId: uuid.New(),
-		Data:      data,
-		Status:    v1.TaskStatusPending,
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    "unknown",
+		Payload: data,
+		Status:  v1.JobStatusPending,
 	}
 
-	p.CreateTask(context.Background(), task)
+	p.CreateJob(context.Background(), job)
 
 	// Act
-	err := svc.ProcessTask(context.Background(), task)
+	err := svc.ProcessJob(context.Background(), job)
 
 	// Assert
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown task type")
+	assert.Contains(t, err.Error(), "unknown job type")
 }

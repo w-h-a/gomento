@@ -8,13 +8,26 @@ import (
 )
 
 const (
-	TaskTypeDistill = "distill_session"
+	JobTypeDistill = "distill_session"
 
-	TaskStatusPending = "pending"
-	TaskStatusRunning = "running"
-	TaskStatusSuccess = "success"
-	TaskStatusFailed  = "failed"
+	JobStatusPending = "pending"
+	JobStatusRunning = "running"
+	JobStatusSuccess = "success"
+	JobStatusFailed  = "failed"
 )
+
+type Job struct {
+	Id        uuid.UUID       `json:"id"`
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+	Status    string          `json:"status"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+type DistillJobPayload struct {
+	SessionId uuid.UUID `json:"session_id"`
+}
 
 type Project struct {
 	Id        uuid.UUID `json:"id"`
@@ -34,23 +47,6 @@ type Session struct {
 	ProjectId uuid.UUID  `json:"project_id"`
 	SpaceId   *uuid.UUID `json:"space_id"`
 	CreatedAt time.Time  `json:"created_at"`
-}
-
-type Task struct {
-	Id        uuid.UUID       `json:"id"`
-	SessionId uuid.UUID       `json:"session_id"`
-	TaskOrder int             `json:"task_order"`
-	Data      json.RawMessage `json:"data"`
-	Status    string          `json:"status"`
-	CreatedAt time.Time       `json:"created_at"`
-	UpdatedAt time.Time       `json:"updated_at"`
-}
-
-type TaskPayload struct {
-	Type            string    `json:"type"`
-	SessionId       uuid.UUID `json:"session_id"`
-	TaskName        string    `json:"task_name"`
-	TaskDescription string    `json:"task_description"`
 }
 
 type Message struct {

@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	ErrSessionLocked = errors.New("session is locked by another task")
+	ErrJobLocked = errors.New("job is locked or being processed")
 )
 
 type V1Persister interface {
@@ -22,11 +22,9 @@ type V1Persister interface {
 	GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error)
 	UpdateSession(ctx context.Context, sess *v1.Session) error
 
-	AcquireSessionLock(ctx context.Context, sessionId uuid.UUID, taskId uuid.UUID) error
-
-	CreateTask(ctx context.Context, t *v1.Task) error
-	UpdateTaskStatus(ctx context.Context, id uuid.UUID, status string) error
-	GetTask(ctx context.Context, id uuid.UUID) (*v1.Task, error)
+	CreateJob(ctx context.Context, job *v1.Job) error
+	AcquireJobLock(ctx context.Context, jobId uuid.UUID) error
+	UpdateJobStatus(ctx context.Context, id uuid.UUID, status string) error
 
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
 	GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...GetMessagesOption) ([]v1.Message, error)
