@@ -13,11 +13,11 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
-	"github.com/w-h-a/gomento/internal/client/distiller"
-	v1mock "github.com/w-h-a/gomento/internal/client/distiller/v1_mock"
-	v1openai "github.com/w-h-a/gomento/internal/client/distiller/v1_openai"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	v1s3 "github.com/w-h-a/gomento/internal/client/filer/v1_s3"
+	"github.com/w-h-a/gomento/internal/client/interpreter"
+	v1mock "github.com/w-h-a/gomento/internal/client/interpreter/v1_mock"
+	v1openai "github.com/w-h-a/gomento/internal/client/interpreter/v1_openai"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
 	v1projecthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_project"
@@ -59,7 +59,7 @@ func Run(c *cli.Context) error {
 
 		apiKey := c.String("api_key")
 
-		dist, err := InitV1Distiller(
+		i, err := InitV1Interpreter(
 			ctx,
 			apiKey,
 			"gpt-3.5-turbo",
@@ -71,7 +71,7 @@ func Run(c *cli.Context) error {
 		workerService = v1workerservice.NewV1Service(
 			p,
 			disp,
-			dist,
+			i,
 		)
 		stopChannels["worker"] = make(chan struct{})
 	}
@@ -225,19 +225,19 @@ func InitV1Dispatcher(ctx context.Context) (dispatcher.V1Dispatcher, error) {
 }
 
 // TODO: accept user configuration
-func InitV1Distiller(
+func InitV1Interpreter(
 	ctx context.Context,
 	apiKey string,
 	model string,
-) (distiller.V1Distiller, error) {
+) (interpreter.V1Interpreter, error) {
 	if len(apiKey) > 0 {
-		return v1openai.NewV1Distiller(
-			distiller.WithApiKey(apiKey),
-			distiller.WithModel(model),
+		return v1openai.NewV1Interpreter(
+			interpreter.WithApiKey(apiKey),
+			interpreter.WithModel(model),
 		), nil
 	}
 
-	return v1mock.NewV1Distiller(), nil
+	return v1mock.NewV1Interpreter(), nil
 }
 
 // TODO: accept user configuration

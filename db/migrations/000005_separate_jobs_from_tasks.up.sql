@@ -11,6 +11,6 @@ CREATE TABLE jobs (
 
 CREATE INDEX ix_jobs_status ON jobs (status);
 
-ALTER TABLE tasks ADD COLUMN is_analyzing BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE tasks ADD COLUMN is_thought BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE tasks ADD CONSTRAINT uq_session_task_order UNIQUE (session_id, task_order);

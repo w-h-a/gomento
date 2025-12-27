@@ -186,8 +186,8 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	s3Client := s3.NewFromConfig(s3Config, func(o *s3.Options) { o.UsePathStyle = true })
 
 	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
-	disp, _ := cmd.InitV1Dispatcher(ctx)
-	dist, _ := cmd.InitV1Distiller(ctx, "", "")
+	d, _ := cmd.InitV1Dispatcher(ctx)
+	i, _ := cmd.InitV1Interpreter(ctx, "", "")
 	f, _ := cmd.InitV1Filer(
 		ctx,
 		MINIO_END,
@@ -199,8 +199,8 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 
 	projSvc := v1project.NewV1Service(p)
 	spaceSvc := v1space.NewV1Service(p)
-	sessSvc := v1session.NewV1Service(p, disp, f, "worker")
-	workerSvc := v1worker.NewV1Service(p, disp, dist)
+	sessSvc := v1session.NewV1Service(p, d, f, "worker")
+	workerSvc := v1worker.NewV1Service(p, d, i)
 
 	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "worker") }()
 

@@ -201,7 +201,7 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 }
 
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
-	payload := v1.DistillJobPayload{
+	payload := v1.JobPayload{
 		SessionId: sessionId,
 	}
 

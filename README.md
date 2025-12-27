@@ -45,11 +45,11 @@ graph TD
     API -- "4. Persist Job" --> Postgres
     API -- "5. Produce Job" --> Queue
     
-    %% Flow 2: Distillation
+    %% Flow 2: Interpretation
     Queue -- "6. Consume" --> Worker
     Worker -- "7. Update Job (Running)" --> Postgres
     Worker -- "8. Fetch Context" --> Postgres
-    Worker -- "9. Distill (Extract SOP)" --> LLM
+    Worker -- "9. Distill/Extract" --> LLM
     Worker -- "10. Save Skill/Vector" --> Postgres
     Worker -- "11. Update Job" --> Postgres
 
@@ -102,7 +102,7 @@ erDiagram
         UUID id PK
         UUID session_id FK
         INT task_order "Order of task execution within a session"
-        BOOLEAN is_analyzing "Whether or not this task is currently being analyzed by the worker/agent"
+        BOOLEAN is_thought "Whether or not this task is associated with thought messages or actions"
         JSON data "Task-specific payload"
         VARCHAR status "pending|running|success|failed"
         TIMESTAMPTZ created_at
