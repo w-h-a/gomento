@@ -41,28 +41,26 @@ graph TD
     %% Flow 1: Storing Context
     Agent -- "1. Push Chat Logs & Assets" --> API
     API -- "2. Upload Assets" --> MinIO
-    API -- "3. Save" --> Postgres
-    API -- "4. Persist Job" --> Postgres
-    API -- "5. Produce Job" --> Queue
+    API -- "3. Save Messages & Asset Metadata" --> Postgres
+    API -- "4. Produce Job" --> Queue
     
     %% Flow 2: Interpretation
-    Queue -- "6. Consume" --> Worker
-    Worker -- "7. Update Job (Running)" --> Postgres
-    Worker -- "8. Fetch Context" --> Postgres
-    Worker -- "9. Distill/Extract" --> LLM
-    Worker -- "10. Save Skill/Vector" --> Postgres
-    Worker -- "11. Update Job" --> Postgres
+    Queue -- "5. Consume" --> Worker
+    Worker -- "6. Fetch Context" --> Postgres
+    Worker -- "7. Distill/Extract" --> LLM
+    Worker -- "8. Save Tasks/Skills" --> Postgres
 
-    %% Flow 3: Retrieval (Skills)
-    Agent -- "12. Ask: 'How do I fix Redis?'" --> API
-    API -- "13. Vector Search" --> Postgres
-    API -- "14. Return SOP" --> Agent
+    %% Flow 3: Retrieval (Current Session History)
+    Agent -- "9. Get Completed Tasks & Messages (w/ Assets)" --> API
+    API -- "10. Fetch History" --> Postgres
+    API -- "11. Presign URLs" --> MinIO
+    API -- "12. Return History" --> Agent
 
-    %% Flow 4: Retrieval (Messages + Assets)
-    Agent -- "15. Get History (w/ Assets)" --> API
-    API -- "16. Fetch Messages" --> Postgres
-    API -- "17. Presign URLs" --> MinIO
-    API -- "18. Return History" --> Agent
+    %% Flow 4: Retrieval (Skills)
+    Agent -- "13. Ask: 'How do I fix Redis?'" --> API
+    API -- "14. Vector Search" --> Postgres
+    API -- "15. Refine" --> Worker
+    API -- "16. Return SOP" --> Agent
 ```
 
 ### ER Diagram
@@ -102,7 +100,7 @@ erDiagram
         UUID id PK
         UUID session_id FK
         INT task_order "Order of task execution within a session"
-        BOOLEAN is_thought "Whether or not this task is associated with thought messages or actions"
+        BOOLEAN is_thought "Whether or not this task is associated with thought messages or action messages"
         JSON data "Task-specific payload"
         VARCHAR status "pending|running|success|failed"
         TIMESTAMPTZ created_at
