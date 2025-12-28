@@ -136,6 +136,38 @@ func TestAPI_FullUserFlow(t *testing.T) {
 	assert.Equal(t, msg1["id"], page2.Items[2].Id.String())
 
 	// Act
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/checkpoint", baseURL, sessionId), nil)
+	rsp, err = client.Do(req)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
+
+	assert.Eventually(t, func() bool {
+		var status string
+		err := db.QueryRow(`
+            SELECT status 
+            FROM jobs 
+            WHERE payload->>'session_id' = $1 
+              AND type = 'extract_session' 
+            ORDER BY created_at DESC 
+            LIMIT 1`,
+			sessionId,
+		).Scan(&status)
+		return err == nil && status == "success"
+	}, 5*time.Second, 100*time.Millisecond, "Extraction Job should succeed")
+
+	assert.Eventually(t, func() bool {
+		var count int
+		err := db.QueryRow("SELECT count(*) FROM tasks WHERE session_id = $1", sessionId).Scan(&count)
+		return err == nil && count > 0
+	}, 5*time.Second, 100*time.Millisecond, "Tasks should be extracted")
+
+	var skillCount int
+	_ = db.QueryRow("SELECT count(*) FROM skills WHERE space_id = $1", spaceId).Scan(&skillCount)
+	assert.Equal(t, 0, skillCount, "Checkpoint should not create skills")
+
+	// Act
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
 	rsp, err = client.Do(req)
 	require.NoError(t, err)

@@ -47,7 +47,7 @@ graph TD
     %% Flow 2: Interpretation
     Queue -- "5. Consume" --> Worker
     Worker -- "6. Fetch Context" --> Postgres
-    Worker -- "7. Distill/Extract" --> LLM
+    Worker -- "7. Extract/Distill" --> LLM
     Worker -- "8. Save Tasks/Skills" --> Postgres
 
     %% Flow 3: Retrieval (Current Session History)

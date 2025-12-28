@@ -237,7 +237,19 @@ func InitV1Interpreter(
 		), nil
 	}
 
-	return v1mock.NewV1Interpreter(), nil
+	return v1mock.NewV1Interpreter(
+		v1mock.WithActionRsp(
+			[]interpreter.TaskAction{
+				{
+					Type: interpreter.TaskActionInsert,
+					Payload: map[string]any{
+						"after_task_order": 0.0,
+						"task_description": "Integration Test Task",
+					},
+				},
+			},
+		),
+	), nil
 }
 
 // TODO: accept user configuration
@@ -297,6 +309,8 @@ func InitV1Router(ctx context.Context, proj *v1projectservice.V1Service, spac *v
 	v1.Methods("POST").Path("/sessions/{session_id}/connect_to_space").HandlerFunc(sessionHandler.ConnectToSpace)
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.GetMessages)
+	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.GetTasks)
+	v1.Methods("POST").Path("/sessions/{session_id}/checkpoint").HandlerFunc(sessionHandler.CheckpointSession)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
 
 	return v1, nil

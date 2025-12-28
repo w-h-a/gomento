@@ -76,5 +76,9 @@ func NewV1Interpreter(opts ...interpreter.Option) *v1MockInterpreter {
 		d.skillRsp = rsp
 	}
 
+	if rsp, ok := ActionRspFrom(options.Context); ok {
+		d.actionRsp = rsp
+	}
+
 	return d
 }

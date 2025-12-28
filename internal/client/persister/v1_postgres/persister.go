@@ -189,17 +189,32 @@ func (p *v1PGPersister) InsertTask(ctx context.Context, sessionId uuid.UUID, aft
 	}
 	defer tx.Rollback()
 
-	shiftQuery := `
+	// 1. Shift existing tasks down to make room.
+	// Step A: Negate
+	negateQuery := `
         UPDATE tasks 
-        SET task_order = task_order + 1 
+        SET task_order = -task_order 
         WHERE session_id = $1 
           AND task_order > $2 
+          AND is_thought = FALSE`
+
+	if _, err := tx.ExecContext(ctx, negateQuery, sessionId, afterOrder); err != nil {
+		return nil, fmt.Errorf("failed to negate tasks for insert shift: %w", err)
+	}
+
+	// Step B: Shift
+	shiftQuery := `
+        UPDATE tasks 
+        SET task_order = (-task_order) + 1 
+        WHERE session_id = $1 
+          AND task_order < (-$2::integer) 
           AND is_thought = FALSE`
 
 	if _, err := tx.ExecContext(ctx, shiftQuery, sessionId, afterOrder); err != nil {
 		return nil, fmt.Errorf("failed to shift tasks for insert: %w", err)
 	}
 
+	// 2. Insert the new task
 	insertQuery := `
         INSERT INTO tasks (id, session_id, task_order, data, status, is_thought, created_at, updated_at)
         VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
@@ -235,6 +250,7 @@ func (p *v1PGPersister) UpdateTask(ctx context.Context, taskId uuid.UUID, status
 	}
 	defer tx.Rollback()
 
+	// 1. Lock Row & Get State
 	var currentSessionId uuid.UUID
 	var oldOrder int
 	var isThought bool
@@ -251,34 +267,47 @@ func (p *v1PGPersister) UpdateTask(ctx context.Context, taskId uuid.UUID, status
 		return nil, fmt.Errorf("cannot update task_order on a thought")
 	}
 
+	// 2. Handle Reordering
 	if order != nil && !isThought && *order != oldOrder {
 		newOrder := *order
-		var shiftQuery string
-		var args []any
 
 		if newOrder > oldOrder {
-			shiftQuery = `
-                UPDATE tasks SET task_order = task_order - 1 
-                WHERE session_id = $1 
-                  AND task_order > $2 
-                  AND task_order <= $3
-                  AND is_thought = FALSE`
-			args = []any{currentSessionId, oldOrder, newOrder}
-		} else {
-			shiftQuery = `
-                UPDATE tasks SET task_order = task_order + 1 
-                WHERE session_id = $1 
-                  AND task_order >= $2 
-                  AND task_order < $3
-                  AND is_thought = FALSE`
-			args = []any{currentSessionId, newOrder, oldOrder}
-		}
+			// Step A: Negate
+			if _, err := tx.ExecContext(ctx, `
+                UPDATE tasks SET task_order = -task_order 
+                WHERE session_id = $1 AND task_order > $2 AND task_order <= $3 AND is_thought = FALSE`,
+				currentSessionId, oldOrder, newOrder); err != nil {
+				return nil, fmt.Errorf("failed to negate for move down: %w", err)
+			}
 
-		if _, err := tx.ExecContext(ctx, shiftQuery, args...); err != nil {
-			return nil, fmt.Errorf("failed to shift task orders: %w", err)
+			// Step B: Shift
+			if _, err := tx.ExecContext(ctx, `
+                UPDATE tasks SET task_order = (-task_order) - 1 
+                WHERE session_id = $1 AND task_order < (-$2::integer) AND task_order >= (-$3::integer) AND is_thought = FALSE`,
+				currentSessionId, oldOrder, newOrder); err != nil {
+				return nil, fmt.Errorf("failed to shift for move down: %w", err)
+			}
+
+		} else {
+			// Step A: Negate
+			if _, err := tx.ExecContext(ctx, `
+                UPDATE tasks SET task_order = -task_order 
+                WHERE session_id = $1 AND task_order >= $2 AND task_order < $3 AND is_thought = FALSE`,
+				currentSessionId, newOrder, oldOrder); err != nil {
+				return nil, fmt.Errorf("failed to negate for move up: %w", err)
+			}
+
+			// Step B: Shift
+			if _, err := tx.ExecContext(ctx, `
+                UPDATE tasks SET task_order = (-task_order) + 1 
+                WHERE session_id = $1 AND task_order <= (-$2::integer) AND task_order > (-$3::integer) AND is_thought = FALSE`,
+				currentSessionId, newOrder, oldOrder); err != nil {
+				return nil, fmt.Errorf("failed to shift for move up: %w", err)
+			}
 		}
 	}
 
+	// 3. Update Fields
 	setParts := []string{"updated_at = NOW()"}
 	args := []any{taskId}
 	argIdx := 2

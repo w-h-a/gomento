@@ -200,7 +200,28 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 	return out, nil
 }
 
+func (s *V1Service) GetTasks(ctx context.Context, in GetTasksInput) (*GetTasksOutput, error) {
+	tasks, err := s.persister.FetchCurrentTasks(ctx, in.SessionId, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	out := &GetTasksOutput{
+		Items: tasks,
+	}
+
+	return out, nil
+}
+
+func (s *V1Service) CheckpointSession(ctx context.Context, sessionId uuid.UUID) error {
+	return s.dispatchJob(ctx, sessionId, v1.JobTypeExtract)
+}
+
 func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
+	return s.dispatchJob(ctx, sessionId, v1.JobTypeDistill)
+}
+
+func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, scope string) error {
 	payload := v1.JobPayload{
 		SessionId: sessionId,
 	}
@@ -212,7 +233,7 @@ func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) erro
 
 	job := &v1.Job{
 		Id:      uuid.New(),
-		Type:    v1.JobTypeDistill,
+		Type:    scope,
 		Payload: data,
 		Status:  v1.JobStatusPending,
 	}
