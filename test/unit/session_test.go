@@ -15,6 +15,7 @@ import (
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
+	"github.com/w-h-a/gomento/internal/client/persister"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	"github.com/w-h-a/gomento/internal/util"
@@ -206,7 +207,7 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	assert.Equal(t, "assistant", msg2.Role)
 
 	// Assert: State
-	stored, err := p.GetMessages(ctx, sessionId)
+	stored, err := p.GetMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
 	assert.NoError(t, err)
 	assert.Len(t, stored, 2)
 	assert.Equal(t, msg1.Id, stored[0].Id)

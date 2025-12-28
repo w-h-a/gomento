@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 	"github.com/pgvector/pgvector-go"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
@@ -40,6 +41,47 @@ func init() {
 type v1PGPersister struct {
 	options persister.Options
 	conn    *sql.DB
+}
+
+func (p *v1PGPersister) CreateJob(ctx context.Context, job *v1.Job) error {
+	query := `
+		INSERT INTO jobs (id, type, payload, status) 
+		VALUES ($1, $2, $3, $4) 
+		RETURNING created_at, updated_at
+	`
+	return p.conn.QueryRowContext(
+		ctx, query,
+		job.Id, job.Type, job.Payload, job.Status,
+	).Scan(&job.CreatedAt, &job.UpdatedAt)
+}
+
+func (p *v1PGPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
+	query := `
+		UPDATE jobs 
+		SET status = 'running', updated_at = NOW()
+		WHERE id = $1 AND status = 'pending'
+	`
+	result, err := p.conn.ExecContext(ctx, query, jobId)
+	if err != nil {
+		return err
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if rows == 0 {
+		return persister.ErrJobLocked
+	}
+
+	return nil
+}
+
+func (p *v1PGPersister) UpdateJobStatus(ctx context.Context, jobId uuid.UUID, status string) error {
+	query := `UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2`
+	_, err := p.conn.ExecContext(ctx, query, status, jobId)
+	return err
 }
 
 func (p *v1PGPersister) CreateProject(ctx context.Context, proj *v1.Project) error {
@@ -103,47 +145,246 @@ func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) err
 	return nil
 }
 
-func (p *v1PGPersister) CreateJob(ctx context.Context, job *v1.Job) error {
+func (p *v1PGPersister) FetchCurrentTasks(ctx context.Context, sessionId uuid.UUID, status *string) ([]v1.Task, error) {
 	query := `
-		INSERT INTO jobs (id, type, payload, status) 
-		VALUES ($1, $2, $3, $4) 
-		RETURNING created_at, updated_at
-	`
-	return p.conn.QueryRowContext(
-		ctx, query,
-		job.Id, job.Type, job.Payload, job.Status,
-	).Scan(&job.CreatedAt, &job.UpdatedAt)
+        SELECT id, session_id, task_order, data, status, is_thought, created_at, updated_at 
+        FROM tasks 
+        WHERE session_id = $1 AND is_thought = FALSE`
+
+	args := []any{sessionId}
+
+	if status != nil {
+		query += " AND status = $2"
+		args = append(args, *status)
+	}
+
+	query += " ORDER BY task_order ASC"
+
+	rows, err := p.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []v1.Task
+	for rows.Next() {
+		var t v1.Task
+		if err := rows.Scan(&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status, &t.IsThought, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
 }
 
-func (p *v1PGPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
-	// Atomic Lock: Update status to 'running' ONLY IF it is currently 'pending'.
-	// This prevents multiple workers from picking up the same job.
-	query := `
-		UPDATE jobs 
-		SET status = 'running', updated_at = NOW()
-		WHERE id = $1 AND status = 'pending'
-	`
-	result, err := p.conn.ExecContext(ctx, query, jobId)
+func (p *v1PGPersister) InsertTask(ctx context.Context, sessionId uuid.UUID, afterOrder int, data []byte, status string) (*v1.Task, error) {
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	shiftQuery := `
+        UPDATE tasks 
+        SET task_order = task_order + 1 
+        WHERE session_id = $1 
+          AND task_order > $2 
+          AND is_thought = FALSE`
+
+	if _, err := tx.ExecContext(ctx, shiftQuery, sessionId, afterOrder); err != nil {
+		return nil, fmt.Errorf("failed to shift tasks for insert: %w", err)
+	}
+
+	insertQuery := `
+        INSERT INTO tasks (id, session_id, task_order, data, status, is_thought, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        RETURNING id, session_id, task_order, data, status, is_thought, created_at, updated_at`
+
+	var t v1.Task
+	newID := uuid.New()
+
+	err = tx.QueryRowContext(ctx, insertQuery,
+		newID,
+		sessionId,
+		afterOrder+1,
+		data,
+		status,
+		false,
+	).Scan(&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status, &t.IsThought, &t.CreatedAt, &t.UpdatedAt)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &t, nil
+}
+
+func (p *v1PGPersister) UpdateTask(ctx context.Context, taskId uuid.UUID, status *string, order *int, data []byte) (*v1.Task, error) {
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var currentSessionId uuid.UUID
+	var oldOrder int
+	var isThought bool
+
+	err = tx.QueryRowContext(ctx, "SELECT session_id, task_order, is_thought FROM tasks WHERE id = $1 FOR UPDATE", taskId).Scan(&currentSessionId, &oldOrder, &isThought)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, persister.ErrTaskNotFound
+		}
+		return nil, err
+	}
+
+	if isThought && order != nil {
+		return nil, fmt.Errorf("cannot update task_order on a thought")
+	}
+
+	if order != nil && !isThought && *order != oldOrder {
+		newOrder := *order
+		var shiftQuery string
+		var args []any
+
+		if newOrder > oldOrder {
+			shiftQuery = `
+                UPDATE tasks SET task_order = task_order - 1 
+                WHERE session_id = $1 
+                  AND task_order > $2 
+                  AND task_order <= $3
+                  AND is_thought = FALSE`
+			args = []any{currentSessionId, oldOrder, newOrder}
+		} else {
+			shiftQuery = `
+                UPDATE tasks SET task_order = task_order + 1 
+                WHERE session_id = $1 
+                  AND task_order >= $2 
+                  AND task_order < $3
+                  AND is_thought = FALSE`
+			args = []any{currentSessionId, newOrder, oldOrder}
+		}
+
+		if _, err := tx.ExecContext(ctx, shiftQuery, args...); err != nil {
+			return nil, fmt.Errorf("failed to shift task orders: %w", err)
+		}
+	}
+
+	setParts := []string{"updated_at = NOW()"}
+	args := []any{taskId}
+	argIdx := 2
+
+	if status != nil {
+		setParts = append(setParts, fmt.Sprintf("status = $%d", argIdx))
+		args = append(args, *status)
+		argIdx++
+	}
+
+	if order != nil && !isThought {
+		setParts = append(setParts, fmt.Sprintf("task_order = $%d", argIdx))
+		args = append(args, *order)
+		argIdx++
+	}
+
+	if data != nil {
+		setParts = append(setParts, fmt.Sprintf("data = $%d", argIdx))
+		args = append(args, data)
+		argIdx++
+	}
+
+	query := fmt.Sprintf("UPDATE tasks SET %s WHERE id = $1 RETURNING id, session_id, task_order, data, status, is_thought, created_at, updated_at", strings.Join(setParts, ", "))
+
+	var t v1.Task
+	err = tx.QueryRowContext(ctx, query, args...).Scan(&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status, &t.IsThought, &t.CreatedAt, &t.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return &t, nil
+}
+
+func (p *v1PGPersister) AppendMessagesToTask(ctx context.Context, taskId uuid.UUID, messageIds []uuid.UUID) error {
+	if len(messageIds) == 0 {
+		return nil
+	}
+
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM tasks WHERE id = $1)", taskId).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return persister.ErrTaskNotFound
+	}
+
+	stringIds := make([]string, len(messageIds))
+	for i, id := range messageIds {
+		stringIds[i] = id.String()
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE messages SET task_id = $1 WHERE id = ANY($2::uuid[])`, taskId, pq.Array(stringIds)); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (p *v1PGPersister) AppendMessagesToThought(ctx context.Context, sessionId uuid.UUID, messageIds []uuid.UUID) error {
+	if len(messageIds) == 0 {
+		return nil
+	}
+
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var thoughtTaskId uuid.UUID
+	err = tx.QueryRowContext(ctx, `SELECT id FROM tasks WHERE session_id = $1 AND is_thought = true LIMIT 1`, sessionId).Scan(&thoughtTaskId)
+
+	if err == sql.ErrNoRows {
+		thoughtTaskId = uuid.New()
+		_, err = tx.ExecContext(ctx, `
+            INSERT INTO tasks (id, session_id, task_order, data, status, is_thought, created_at, updated_at) 
+            VALUES ($1, $2, 0, '{}', 'pending', true, NOW(), NOW())`,
+			thoughtTaskId, sessionId)
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	stringIds := make([]string, len(messageIds))
+	for i, id := range messageIds {
+		stringIds[i] = id.String()
+	}
+
+	_, err = tx.ExecContext(ctx, `UPDATE messages SET task_id = $1 WHERE id = ANY($2::uuid[])`, thoughtTaskId, pq.Array(stringIds))
 	if err != nil {
 		return err
 	}
 
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-
-	if rows == 0 {
-		return persister.ErrJobLocked
-	}
-
-	return nil
-}
-
-func (p *v1PGPersister) UpdateJobStatus(ctx context.Context, jobId uuid.UUID, status string) error {
-	query := `UPDATE jobs SET status = $1, updated_at = NOW() WHERE id = $2`
-	_, err := p.conn.ExecContext(ctx, query, status, jobId)
-	return err
+	return tx.Commit()
 }
 
 func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
@@ -225,10 +466,12 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, op
 	argIdx := 2
 
 	if !options.AfterCreatedAt.IsZero() && options.AfterId != uuid.Nil {
-		if options.Sort == persister.SortOrderDesc {
-			query += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id < $%d))`, argIdx, argIdx, argIdx+1)
-		} else {
+		if options.Sort == persister.SortOrderAsc {
+			// return older first
 			query += fmt.Sprintf(` AND (created_at > $%d OR (created_at = $%d AND id > $%d))`, argIdx, argIdx, argIdx+1)
+		} else {
+			// return newer first
+			query += fmt.Sprintf(` AND (created_at < $%d OR (created_at = $%d AND id < $%d))`, argIdx, argIdx, argIdx+1)
 		}
 		args = append(args, options.AfterCreatedAt, options.AfterId)
 		argIdx += 2
@@ -238,6 +481,7 @@ func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, op
 	if options.Sort == persister.SortOrderAsc {
 		sortDir = "ASC"
 	}
+
 	query += fmt.Sprintf(` ORDER BY created_at %s, id %s`, sortDir, sortDir)
 
 	if options.Limit > 0 {
