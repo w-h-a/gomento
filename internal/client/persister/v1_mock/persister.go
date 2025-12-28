@@ -20,10 +20,57 @@ type v1MockPersister struct {
 	projects map[uuid.UUID]*v1.Project
 	spaces   map[uuid.UUID]*v1.Space
 	sessions map[uuid.UUID]*v1.Session
-	messages map[uuid.UUID][]v1.Message
+	tasks    map[uuid.UUID]*v1.Task
+	messages map[uuid.UUID]*v1.Message
 	assets   map[uuid.UUID]*v1.Asset
 	skills   map[uuid.UUID]*v1.Skill
 	mtx      sync.RWMutex
+}
+
+func (p *v1MockPersister) CreateJob(ctx context.Context, job *v1.Job) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	job.CreatedAt = time.Now()
+	job.UpdatedAt = time.Now()
+	p.jobs[job.Id] = job
+	return nil
+}
+
+func (p *v1MockPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	j, ok := p.jobs[jobId]
+	if !ok {
+		return fmt.Errorf("job not found")
+	}
+
+	if j.Status == v1.JobStatusRunning {
+		return persister.ErrJobLocked
+	}
+	j.Status = v1.JobStatusRunning
+	j.UpdatedAt = time.Now()
+	return nil
+}
+
+func (p *v1MockPersister) UpdateJobStatus(ctx context.Context, id uuid.UUID, status string) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	j, ok := p.jobs[id]
+	if !ok {
+		return errors.New("job not found")
+	}
+	j.Status = status
+	j.UpdatedAt = time.Now()
+	return nil
+}
+
+func (p *v1MockPersister) Jobs() map[uuid.UUID]*v1.Job {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID]*v1.Job, len(p.jobs))
+	maps.Copy(cpy, p.jobs)
+	return cpy
 }
 
 func (p *v1MockPersister) CreateProject(ctx context.Context, proj *v1.Project) error {
@@ -84,60 +131,178 @@ func (p *v1MockPersister) UpdateSession(ctx context.Context, sess *v1.Session) e
 	return nil
 }
 
-func (p *v1MockPersister) CreateJob(ctx context.Context, job *v1.Job) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	job.CreatedAt = time.Now()
-	job.UpdatedAt = time.Now()
-	p.jobs[job.Id] = job
-	return nil
-}
-
-func (p *v1MockPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-
-	j, ok := p.jobs[jobId]
-	if !ok {
-		return fmt.Errorf("job not found")
-	}
-
-	if j.Status == v1.JobStatusRunning {
-		return persister.ErrJobLocked
-	}
-	j.Status = v1.JobStatusRunning
-	j.UpdatedAt = time.Now()
-	return nil
-}
-
-func (p *v1MockPersister) UpdateJobStatus(ctx context.Context, id uuid.UUID, status string) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	j, ok := p.jobs[id]
-	if !ok {
-		return errors.New("job not found")
-	}
-	j.Status = status
-	j.UpdatedAt = time.Now()
-	return nil
-}
-
-func (p *v1MockPersister) Jobs() map[uuid.UUID]*v1.Job {
+func (p *v1MockPersister) FetchCurrentTasks(ctx context.Context, sessionId uuid.UUID, status *string) ([]v1.Task, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Job, len(p.jobs))
-	maps.Copy(cpy, p.jobs)
-	return cpy
+
+	var result []v1.Task
+	for _, t := range p.tasks {
+		if t.SessionId == sessionId && !t.IsThought {
+			if status != nil && t.Status != *status {
+				continue
+			}
+			result = append(result, *t)
+		}
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].TaskOrder < result[j].TaskOrder
+	})
+
+	return result, nil
+}
+
+func (p *v1MockPersister) InsertTask(ctx context.Context, sessionId uuid.UUID, afterOrder int, data []byte, status string) (*v1.Task, error) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	for _, t := range p.tasks {
+		if t.SessionId == sessionId && t.TaskOrder > afterOrder {
+			t.TaskOrder++
+		}
+	}
+
+	newTask := &v1.Task{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		TaskOrder: afterOrder + 1,
+		Data:      data,
+		Status:    status,
+		IsThought: false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	p.tasks[newTask.Id] = newTask
+
+	return newTask, nil
+}
+
+func (p *v1MockPersister) UpdateTask(ctx context.Context, taskId uuid.UUID, status *string, order *int, data []byte) (*v1.Task, error) {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	t, ok := p.tasks[taskId]
+	if !ok {
+		return nil, persister.ErrTaskNotFound
+	}
+
+	if t.IsThought && order != nil {
+		return nil, fmt.Errorf("cannot set task_order on a thought")
+	}
+
+	if order != nil && !t.IsThought && *order != t.TaskOrder {
+		oldOrder := t.TaskOrder
+		newOrder := *order
+
+		for _, other := range p.tasks {
+			if other.SessionId == t.SessionId && !other.IsThought && other.Id != t.Id {
+
+				if newOrder > oldOrder {
+					if other.TaskOrder > oldOrder && other.TaskOrder <= newOrder {
+						other.TaskOrder--
+					}
+				}
+
+				if newOrder < oldOrder {
+					if other.TaskOrder >= newOrder && other.TaskOrder < oldOrder {
+						other.TaskOrder++
+					}
+				}
+			}
+		}
+
+		t.TaskOrder = newOrder
+	}
+
+	if status != nil {
+		t.Status = *status
+	}
+
+	if data != nil {
+		t.Data = data
+	}
+
+	t.UpdatedAt = time.Now()
+
+	return t, nil
+}
+
+func (p *v1MockPersister) AppendMessagesToTask(ctx context.Context, taskId uuid.UUID, messageIds []uuid.UUID) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	if _, ok := p.tasks[taskId]; !ok {
+		return persister.ErrTaskNotFound
+	}
+
+	for _, msgId := range messageIds {
+		if msg, ok := p.messages[msgId]; ok {
+			msg.TaskId = &taskId
+		}
+	}
+
+	return nil
+}
+
+func (p *v1MockPersister) AppendMessagesToThought(ctx context.Context, sessionId uuid.UUID, messageIds []uuid.UUID) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	var thought *v1.Task
+	for _, t := range p.tasks {
+		if t.SessionId == sessionId && t.IsThought {
+			thought = t
+			break
+		}
+	}
+
+	if thought == nil {
+		thought = &v1.Task{
+			Id:        uuid.New(),
+			SessionId: sessionId,
+			TaskOrder: 0,
+			IsThought: true,
+			Status:    "pending",
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Data:      []byte("{}"),
+		}
+
+		p.tasks[thought.Id] = thought
+	}
+
+	for _, msgId := range messageIds {
+		if msg, ok := p.messages[msgId]; ok {
+			msg.TaskId = &thought.Id
+		}
+	}
+
+	return nil
 }
 
 func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	existingMsgs := p.messages[msg.SessionId]
-	if len(existingMsgs) > 0 {
-		lastMsg := existingMsgs[len(existingMsgs)-1]
+	if msg.CreatedAt.IsZero() {
+		msg.CreatedAt = time.Now().UTC()
+	}
+
+	var lastMsg *v1.Message
+	for _, m := range p.messages {
+		if m.SessionId == msg.SessionId {
+			if lastMsg == nil || m.CreatedAt.After(lastMsg.CreatedAt) {
+				lastMsg = m
+			}
+		}
+	}
+
+	if lastMsg != nil {
 		msg.ParentId = &lastMsg.Id
+		if !msg.CreatedAt.After(lastMsg.CreatedAt) {
+			msg.CreatedAt = lastMsg.CreatedAt.Add(time.Nanosecond)
+		}
 	}
 
 	for partIdx, a := range assets {
@@ -147,7 +312,11 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 		p.assets[a.Id] = a
 	}
 
-	p.messages[msg.SessionId] = append(p.messages[msg.SessionId], *msg)
+	if p.messages == nil {
+		p.messages = make(map[uuid.UUID]*v1.Message)
+	}
+
+	p.messages[msg.Id] = msg
 
 	return nil
 }
@@ -158,23 +327,27 @@ func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, 
 
 	options := persister.NewGetMessagesOptions(opts...)
 
-	msgs := p.messages[sessionId]
-
-	cpy := make([]v1.Message, len(msgs))
-	copy(cpy, msgs)
-
-	sort.Slice(cpy, func(i, j int) bool {
-		if options.Sort == persister.SortOrderAsc {
-			return cpy[i].CreatedAt.Before(cpy[j].CreatedAt)
+	var sessionMsgs []v1.Message
+	for _, m := range p.messages {
+		if m.SessionId == sessionId {
+			sessionMsgs = append(sessionMsgs, *m)
 		}
-		return cpy[i].CreatedAt.After(cpy[j].CreatedAt)
-	})
-
-	if options.Limit > 0 && len(cpy) > options.Limit {
-		cpy = cpy[:options.Limit]
 	}
 
-	return cpy, nil
+	sort.Slice(sessionMsgs, func(i, j int) bool {
+		if options.Sort == persister.SortOrderAsc {
+			// return older first
+			return sessionMsgs[i].CreatedAt.Before(sessionMsgs[j].CreatedAt)
+		}
+		// return newer first
+		return sessionMsgs[i].CreatedAt.After(sessionMsgs[j].CreatedAt)
+	})
+
+	if options.Limit > 0 && len(sessionMsgs) > options.Limit {
+		sessionMsgs = sessionMsgs[:options.Limit]
+	}
+
+	return sessionMsgs, nil
 }
 
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
@@ -209,11 +382,12 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 
 	p := &v1MockPersister{
 		options:  options,
+		jobs:     map[uuid.UUID]*v1.Job{},
 		projects: map[uuid.UUID]*v1.Project{},
 		spaces:   map[uuid.UUID]*v1.Space{},
 		sessions: map[uuid.UUID]*v1.Session{},
-		jobs:     map[uuid.UUID]*v1.Job{},
-		messages: map[uuid.UUID][]v1.Message{},
+		tasks:    map[uuid.UUID]*v1.Task{},
+		messages: map[uuid.UUID]*v1.Message{},
 		assets:   map[uuid.UUID]*v1.Asset{},
 		skills:   map[uuid.UUID]*v1.Skill{},
 		mtx:      sync.RWMutex{},

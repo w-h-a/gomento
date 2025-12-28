@@ -71,6 +71,7 @@ type Task struct {
 type Message struct {
 	Id        uuid.UUID  `json:"id"`
 	SessionId uuid.UUID  `json:"session_id"`
+	TaskId    *uuid.UUID `json:"task_id,omitempty"`
 	ParentId  *uuid.UUID `json:"parent_id,omitempty"`
 	Role      string     `json:"role"`
 	Parts     []Part     `json:"parts"`
