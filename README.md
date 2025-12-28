@@ -51,7 +51,7 @@ graph TD
     Worker -- "8. Save Tasks/Skills" --> Postgres
 
     %% Flow 3: Retrieval (Current Session History)
-    Agent -- "9. Get Completed Tasks & Messages (w/ Assets)" --> API
+    Agent -- "9. Get Tasks & Messages (w/ Assets)" --> API
     API -- "10. Fetch History" --> Postgres
     API -- "11. Presign URLs" --> MinIO
     API -- "12. Return History" --> Agent
