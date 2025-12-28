@@ -39,9 +39,9 @@ graph TD
     end
 
     %% Flow 1: Storing Context
-    Agent -- "1. Push Chat Logs & Assets" --> API
+    Agent -- "1. Push Chat Logs, Files, and Assets" --> API
     API -- "2. Upload Assets" --> MinIO
-    API -- "3. Save Messages & Asset Metadata" --> Postgres
+    API -- "3. Save Messages, Files, and Asset Metadata" --> Postgres
     API -- "4. Produce Job" --> Queue
     
     %% Flow 2: Interpretation
@@ -117,6 +117,11 @@ erDiagram
         TIMESTAMPTZ created_at
     }
 
+    MESSAGE_ASSETS {
+        UUID message_id PK, FK
+        UUID asset_id PK, FK
+    }
+
     ASSETS {
         UUID id PK
         TEXT container "e.g., Bucket"
@@ -128,22 +133,38 @@ erDiagram
         TIMESTAMPTZ created_at
     }
 
-    MESSAGE_ASSETS {
-        UUID message_id PK, FK
-        UUID asset_id PK, FK
+    ARTIFACTS {
+        UUID id PK
+        UUID project_id FK
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
+    }
+
+    FILES {
+        UUID id PK
+        UUID artifact_id FK
+        UUID asset_id FK
+        TEXT path
+        TEXT filename
+        JSONB meta
+        TIMESTAMPTZ created_at
+        TIMESTAMPTZ updated_at
     }
 
     PROJECTS ||--|{ SPACES : ""
     PROJECTS ||--|{ SESSIONS : ""
+    PROJECTS ||--|{ ARTIFACTS : ""
     
     SPACES ||--|{ SKILLS : ""
     SPACES |o--o{ SESSIONS : ""
     
-    SESSIONS ||--|{ MESSAGES : ""
     SESSIONS ||--|{ TASKS : ""
-
     TASKS |o--o{ MESSAGES : ""
+    SESSIONS ||--|{ MESSAGES : ""
 
-    MESSAGES ||--|{ MESSAGE_ASSETS : ""
+    MESSAGES ||--o{ MESSAGE_ASSETS : ""
     ASSETS ||--|{ MESSAGE_ASSETS : ""
+
+    ARTIFACTS ||--|{ FILES : ""
+    FILES }|--|| ASSETS : ""
 ```
