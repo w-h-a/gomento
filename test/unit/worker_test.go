@@ -12,12 +12,133 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
+	"github.com/w-h-a/gomento/internal/client/interpreter"
 	v1mockinterpreter "github.com/w-h-a/gomento/internal/client/interpreter/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	v1worker "github.com/w-h-a/gomento/internal/service/v1_worker"
 )
 
-func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
+func TestProcessJob_Checkpoint_UpdatesTasksOnly(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+
+	insertAction := interpreter.TaskAction{
+		Type:    interpreter.TaskActionInsert,
+		Payload: map[string]any{"after_task_order": 0.0, "task_description": "New Task"},
+	}
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithActionRsp(
+			[]interpreter.TaskAction{
+				insertAction,
+			},
+		),
+	)
+
+	s := v1worker.NewV1Service(p, d, i)
+
+	sessionId := uuid.New()
+	spaceId := uuid.New()
+	ctx := context.Background()
+
+	err := p.CreateSession(ctx, &v1.Session{
+		Id:        sessionId,
+		SpaceId:   &spaceId,
+		CreatedAt: time.Now(),
+	})
+	require.NoError(t, err)
+
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeExtract,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	err = p.CreateJob(ctx, job)
+	require.NoError(t, err)
+
+	// Act
+	err = s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updated := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
+
+	skills := p.Skills()
+	assert.Len(t, skills, 0)
+
+	tasks, err := p.FetchCurrentTasks(ctx, sessionId, nil)
+	assert.NoError(t, err)
+	assert.Len(t, tasks, 3)
+}
+
+func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithActionRsp(
+			[]interpreter.TaskAction{
+				{
+					Type: interpreter.TaskActionFinish,
+				},
+			},
+		),
+	)
+
+	s := v1worker.NewV1Service(p, d, i)
+
+	sessionId := uuid.New()
+	spaceId := uuid.New()
+	ctx := context.Background()
+
+	err := p.CreateSession(ctx, &v1.Session{
+		Id:        sessionId,
+		SpaceId:   &spaceId,
+		CreatedAt: time.Now(),
+	})
+	require.NoError(t, err)
+
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	err = p.CreateJob(ctx, job)
+	require.NoError(t, err)
+
+	// Act
+	err = s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updated := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
+
+	skills := p.Skills()
+	assert.Len(t, skills, 1)
+
+	tasks, err := p.FetchCurrentTasks(ctx, sessionId, nil)
+	assert.NoError(t, err)
+	assert.Len(t, tasks, 0)
+}
+
+func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -118,7 +239,7 @@ func TestProcessTask_DistillsAndSavesSkill(t *testing.T) {
 	assert.Equal(t, spaceId, savedSkill.SpaceId)
 }
 
-func TestProcessTask_ProcessingOrder(t *testing.T) {
+func TestProcessJob_ProcessingOrder(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -212,7 +333,7 @@ func TestProcessJob_EnforcesJobLock(t *testing.T) {
 	assert.Equal(t, v1.JobStatusRunning, updated.Status)
 }
 
-func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
+func TestProcessJob_SkipsIfSpaceIsNil(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -248,7 +369,7 @@ func TestProcessTask_SkipsIfSpaceIsNil(t *testing.T) {
 	assert.Len(t, p.Skills(), 0)
 }
 
-func TestProcessTask_IgnoresUnknownTaskTypes(t *testing.T) {
+func TestProcessJob_IgnoresUnknownTaskTypes(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
