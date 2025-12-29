@@ -43,6 +43,15 @@ type Space struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Skill struct {
+	Id        uuid.UUID `json:"id"`
+	SpaceId   uuid.UUID `json:"space_id"`
+	Trigger   string    `json:"trigger"`
+	SOP       string    `json:"sop"`
+	Embedding []float32 `json:"embedding"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Session struct {
 	Id        uuid.UUID  `json:"id"`
 	ProjectId uuid.UUID  `json:"project_id"`
@@ -96,11 +105,21 @@ type Asset struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type Skill struct {
+type Artifact struct {
 	Id        uuid.UUID `json:"id"`
-	SpaceId   uuid.UUID `json:"space_id"`
-	Trigger   string    `json:"trigger"`
-	SOP       string    `json:"sop"`
-	Embedding []float32 `json:"embedding"`
+	ProjectId uuid.UUID `json:"project_id"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type File struct {
+	Id         uuid.UUID       `json:"id"`
+	ArtifactId uuid.UUID       `json:"artifact_id"`
+	AssetId    uuid.UUID       `json:"asset_id"`
+	Path       string          `json:"path"`
+	Filename   string          `json:"filename"`
+	Meta       json.RawMessage `json:"meta"`
+	CreatedAt  time.Time       `json:"created_at"`
+	UpdatedAt  time.Time       `json:"updated_at"`
+	Asset      *Asset          `json:"asset,omitempty"`
 }

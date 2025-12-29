@@ -109,6 +109,12 @@ func (p *v1PGPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, 
 	return &s, nil
 }
 
+func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
+	query := `INSERT INTO skills (id, space_id, trigger, sop, embedding) VALUES ($1, $2, $3, $4, $5)`
+	_, err := p.conn.ExecContext(ctx, query, skill.Id, skill.SpaceId, skill.Trigger, skill.SOP, pgvector.NewVector(skill.Embedding))
+	return err
+}
+
 func (p *v1PGPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
 	query := `INSERT INTO sessions (id, project_id, space_id) VALUES ($1, $2, $3) RETURNING created_at;`
 	return p.conn.QueryRowContext(ctx, query, sess.Id, sess.ProjectId, sess.SpaceId).Scan(&sess.CreatedAt)
@@ -579,12 +585,6 @@ func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uui
 	}
 
 	return result, rows.Err()
-}
-
-func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
-	query := `INSERT INTO skills (id, space_id, trigger, sop, embedding) VALUES ($1, $2, $3, $4, $5)`
-	_, err := p.conn.ExecContext(ctx, query, skill.Id, skill.SpaceId, skill.Trigger, skill.SOP, pgvector.NewVector(skill.Embedding))
-	return err
 }
 
 func NewV1Persister(opts ...persister.Option) persister.V1Persister {
