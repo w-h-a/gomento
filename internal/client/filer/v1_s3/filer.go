@@ -28,7 +28,7 @@ type v1S3Filer struct {
 	presigner *s3.PresignClient
 }
 
-func (f *v1S3Filer) Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
+func (f *v1S3Filer) UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
 	// use fileheader to open file contents
 	file, err := fh.Open()
 	if err != nil {

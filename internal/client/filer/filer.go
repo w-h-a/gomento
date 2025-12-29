@@ -9,6 +9,6 @@ import (
 )
 
 type V1Filer interface {
-	Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error)
+	UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error)
 	PresignGet(ctx context.Context, path string, expire time.Duration) (string, error)
 }
