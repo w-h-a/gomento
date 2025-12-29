@@ -18,7 +18,7 @@ type v1MockFiler struct {
 	mtx     sync.RWMutex
 }
 
-func (f *v1MockFiler) Upload(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
+func (f *v1MockFiler) UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
 	path := "uploads/" + fh.Filename

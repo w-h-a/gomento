@@ -93,7 +93,7 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			return nil, fmt.Errorf("file %s not found", pIn.FileField)
 		}
 
-		asset, err := s.filer.Upload(ctx, fh)
+		asset, err := s.filer.UploadMultipart(ctx, fh)
 		if err != nil {
 			return nil, fmt.Errorf("upload failed: %w", err)
 		}
