@@ -44,15 +44,8 @@ type v1PGPersister struct {
 }
 
 func (p *v1PGPersister) CreateJob(ctx context.Context, job *v1.Job) error {
-	query := `
-		INSERT INTO jobs (id, type, payload, status) 
-		VALUES ($1, $2, $3, $4) 
-		RETURNING created_at, updated_at
-	`
-	return p.conn.QueryRowContext(
-		ctx, query,
-		job.Id, job.Type, job.Payload, job.Status,
-	).Scan(&job.CreatedAt, &job.UpdatedAt)
+	query := `INSERT INTO jobs (id, type, payload, status) VALUES ($1, $2, $3, $4) RETURNING created_at, updated_at;`
+	return p.conn.QueryRowContext(ctx, query, job.Id, job.Type, job.Payload, job.Status).Scan(&job.CreatedAt, &job.UpdatedAt)
 }
 
 func (p *v1PGPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) error {
@@ -142,13 +135,8 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 
 func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) error {
 	query := `UPDATE sessions SET space_id = $1 WHERE id = $2`
-
 	_, err := p.conn.ExecContext(ctx, query, sess.SpaceId, sess.Id)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (p *v1PGPersister) FetchCurrentTasks(ctx context.Context, sessionId uuid.UUID, status *string) ([]v1.Task, error) {
@@ -585,6 +573,80 @@ func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uui
 	}
 
 	return result, rows.Err()
+}
+
+func (p *v1PGPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
+	query := `INSERT INTO artifacts (id, project_id) VALUES ($1, $2) RETURNING created_at, updated_at;`
+	return p.conn.QueryRowContext(ctx, query, a.Id, a.ProjectId).Scan(&a.CreatedAt, &a.UpdatedAt)
+}
+
+func (p *v1PGPersister) CreateAsset(ctx context.Context, a *v1.Asset) error {
+	query := `
+		INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		ON CONFLICT (container, path) DO UPDATE SET 
+			etag=EXCLUDED.etag,
+			sha256=EXCLUDED.sha256,
+			mime=EXCLUDED.mime,
+			size_bytes=EXCLUDED.size_bytes
+		RETURNING id, created_at`
+
+	return p.conn.QueryRowContext(
+		ctx, query,
+		a.Id, a.Container, a.Path, a.ETag, a.SHA256, a.MIME, a.SizeBytes,
+	).Scan(&a.Id, &a.CreatedAt)
+}
+
+func (p *v1PGPersister) UpsertFile(ctx context.Context, f *v1.File) error {
+	query := `
+		INSERT INTO files (id, artifact_id, asset_id, path, filename, meta)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (artifact_id, path, filename) 
+		DO UPDATE SET 
+			asset_id = EXCLUDED.asset_id, 
+			meta = EXCLUDED.meta, 
+			updated_at = NOW()
+		RETURNING created_at, updated_at`
+
+	return p.conn.QueryRowContext(ctx, query,
+		f.Id, f.ArtifactId, f.AssetId, f.Path, f.Filename, f.Meta,
+	).Scan(&f.CreatedAt, &f.UpdatedAt)
+}
+
+func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
+	query := `
+		SELECT 
+			f.id, f.artifact_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+			a.id, a.container, a.path, a.mime, a.size_bytes
+		FROM files f
+		JOIN assets a ON f.asset_id = a.id
+		WHERE f.artifact_id = $1
+		ORDER BY f.path, f.filename`
+
+	rows, err := p.conn.QueryContext(ctx, query, artifactId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []v1.File
+	for rows.Next() {
+		var f v1.File
+		f.Asset = &v1.Asset{}
+		if err := rows.Scan(
+			&f.Id, &f.ArtifactId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
+			&f.Asset.Id, &f.Asset.Container, &f.Asset.Path, &f.Asset.MIME, &f.Asset.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+		files = append(files, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return files, nil
 }
 
 func NewV1Persister(opts ...persister.Option) persister.V1Persister {
