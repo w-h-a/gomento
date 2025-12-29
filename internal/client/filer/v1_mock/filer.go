@@ -3,6 +3,7 @@ package v1mock
 import (
 	"context"
 	"fmt"
+	"io"
 	"maps"
 	"mime/multipart"
 	"sync"
@@ -32,6 +33,22 @@ func (f *v1MockFiler) UploadMultipart(ctx context.Context, fh *multipart.FileHea
 		Path:      path,
 		MIME:      contentType,
 		SizeBytes: fh.Size,
+	}, nil
+}
+
+func (f *v1MockFiler) UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+	path := "uploads/" + filename
+	f.uploads[path] = size
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return &v1.Asset{
+		Container: f.options.Container,
+		Path:      path,
+		MIME:      contentType,
+		SizeBytes: size,
 	}, nil
 }
 
