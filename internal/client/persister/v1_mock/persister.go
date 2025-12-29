@@ -19,11 +19,11 @@ type v1MockPersister struct {
 	jobs     map[uuid.UUID]*v1.Job
 	projects map[uuid.UUID]*v1.Project
 	spaces   map[uuid.UUID]*v1.Space
+	skills   map[uuid.UUID]*v1.Skill
 	sessions map[uuid.UUID]*v1.Session
 	tasks    map[uuid.UUID]*v1.Task
 	messages map[uuid.UUID]*v1.Message
 	assets   map[uuid.UUID]*v1.Asset
-	skills   map[uuid.UUID]*v1.Skill
 	mtx      sync.RWMutex
 }
 
@@ -103,6 +103,13 @@ func (p *v1MockPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space
 		return &cpy, nil
 	}
 	return nil, nil
+}
+
+func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	p.skills[skill.Id] = skill
+	return nil
 }
 
 func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
@@ -362,13 +369,6 @@ func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[u
 	return cpy, nil
 }
 
-func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	p.skills[skill.Id] = skill
-	return nil
-}
-
 func (p *v1MockPersister) Skills() map[uuid.UUID]*v1.Skill {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
@@ -385,11 +385,11 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 		jobs:     map[uuid.UUID]*v1.Job{},
 		projects: map[uuid.UUID]*v1.Project{},
 		spaces:   map[uuid.UUID]*v1.Space{},
+		skills:   map[uuid.UUID]*v1.Skill{},
 		sessions: map[uuid.UUID]*v1.Session{},
 		tasks:    map[uuid.UUID]*v1.Task{},
 		messages: map[uuid.UUID]*v1.Message{},
 		assets:   map[uuid.UUID]*v1.Asset{},
-		skills:   map[uuid.UUID]*v1.Skill{},
 		mtx:      sync.RWMutex{},
 	}
 

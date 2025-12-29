@@ -23,6 +23,8 @@ type V1Persister interface {
 	CreateSpace(ctx context.Context, space *v1.Space) error
 	GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error)
 
+	SaveSkill(ctx context.Context, skill *v1.Skill) error
+
 	CreateSession(ctx context.Context, sess *v1.Session) error
 	GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error)
 	UpdateSession(ctx context.Context, sess *v1.Session) error
@@ -36,6 +38,4 @@ type V1Persister interface {
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
 	GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...GetMessagesOption) ([]v1.Message, error)
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
-
-	SaveSkill(ctx context.Context, skill *v1.Skill) error
 }
