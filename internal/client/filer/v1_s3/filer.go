@@ -29,44 +29,49 @@ type v1S3Filer struct {
 }
 
 func (f *v1S3Filer) UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
-	// use fileheader to open file contents
 	file, err := fh.Open()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file header: %w", err)
 	}
 	defer file.Close()
 
-	// calculate sha
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, file); err != nil {
-		return nil, fmt.Errorf("hashing failed: %w", err)
-	}
+	return f.upload(ctx, file, fh.Filename, fh.Header.Get("Content-Type"), fh.Size)
+}
 
-	sumHex := hex.EncodeToString(hasher.Sum(nil))
+func (f *v1S3Filer) UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
+	return f.upload(ctx, r, filename, contentType, size)
+}
 
-	// reset file pointer to the beginning so we can read again during upload
-	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("seek failed: %w", err)
-	}
-
-	// generate path uploads/yyyy/mm/dd/hash.ext
-	ext := strings.ToLower(filepath.Ext(fh.Filename))
-	datePrefix := time.Now().UTC().Format("2006/01/02")
-	path := fmt.Sprintf("uploads/%s/%s%s", datePrefix, sumHex, ext)
-
-	// upload
-	contentType := fh.Header.Get("Content-Type")
+func (f *v1S3Filer) upload(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
 	if len(contentType) == 0 {
 		contentType = "application/octet-stream"
 	}
 
+	// calculate sha
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, r); err != nil {
+		return nil, fmt.Errorf("hashing failed: %w", err)
+	}
+	sumHex := hex.EncodeToString(hasher.Sum(nil))
+
+	// reset stream to the beginning so we can read again during upload
+	if _, err := r.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("seek failed: %w", err)
+	}
+
+	// generate path uploads/yyyy/mm/dd/hash.ext
+	ext := strings.ToLower(filepath.Ext(filename))
+	datePrefix := time.Now().UTC().Format("2006/01/02")
+	path := fmt.Sprintf("uploads/%s/%s%s", datePrefix, sumHex, ext)
+
+	// upload
 	out, err := f.uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(f.options.Container),
 		Key:         aws.String(path),
-		Body:        file,
+		Body:        r,
 		ContentType: aws.String(contentType),
 		Metadata: map[string]string{
-			"original-name": fh.Filename,
+			"original-name": filename,
 			"sha256":        sumHex,
 		},
 	})
@@ -78,7 +83,7 @@ func (f *v1S3Filer) UploadMultipart(ctx context.Context, fh *multipart.FileHeade
 		Container: f.options.Container,
 		Path:      path,
 		ETag:      aws.ToString(out.ETag),
-		SizeBytes: fh.Size,
+		SizeBytes: size,
 		MIME:      contentType,
 		SHA256:    sumHex,
 	}, nil
