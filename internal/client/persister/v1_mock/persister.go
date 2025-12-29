@@ -15,16 +15,18 @@ import (
 )
 
 type v1MockPersister struct {
-	options  persister.Options
-	jobs     map[uuid.UUID]*v1.Job
-	projects map[uuid.UUID]*v1.Project
-	spaces   map[uuid.UUID]*v1.Space
-	skills   map[uuid.UUID]*v1.Skill
-	sessions map[uuid.UUID]*v1.Session
-	tasks    map[uuid.UUID]*v1.Task
-	messages map[uuid.UUID]*v1.Message
-	assets   map[uuid.UUID]*v1.Asset
-	mtx      sync.RWMutex
+	options   persister.Options
+	jobs      map[uuid.UUID]*v1.Job
+	projects  map[uuid.UUID]*v1.Project
+	spaces    map[uuid.UUID]*v1.Space
+	skills    map[uuid.UUID]*v1.Skill
+	sessions  map[uuid.UUID]*v1.Session
+	tasks     map[uuid.UUID]*v1.Task
+	messages  map[uuid.UUID]*v1.Message
+	assets    map[uuid.UUID]*v1.Asset
+	artifacts map[uuid.UUID]*v1.Artifact
+	files     map[uuid.UUID]*v1.File
+	mtx       sync.RWMutex
 }
 
 func (p *v1MockPersister) CreateJob(ctx context.Context, job *v1.Job) error {
@@ -48,8 +50,11 @@ func (p *v1MockPersister) AcquireJobLock(ctx context.Context, jobId uuid.UUID) e
 	if j.Status == v1.JobStatusRunning {
 		return persister.ErrJobLocked
 	}
+
 	j.Status = v1.JobStatusRunning
+
 	j.UpdatedAt = time.Now()
+
 	return nil
 }
 
@@ -110,6 +115,14 @@ func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error 
 	defer p.mtx.Unlock()
 	p.skills[skill.Id] = skill
 	return nil
+}
+
+func (p *v1MockPersister) Skills() map[uuid.UUID]*v1.Skill {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID]*v1.Skill, len(p.skills))
+	maps.Copy(cpy, p.skills)
+	return cpy
 }
 
 func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
@@ -369,28 +382,90 @@ func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[u
 	return cpy, nil
 }
 
-func (p *v1MockPersister) Skills() map[uuid.UUID]*v1.Skill {
+func (p *v1MockPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	a.CreatedAt = time.Now()
+	a.UpdatedAt = time.Now()
+	p.artifacts[a.Id] = a
+	return nil
+}
+
+func (p *v1MockPersister) CreateAsset(ctx context.Context, a *v1.Asset) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	for _, existing := range p.assets {
+		if existing.Container == a.Container && existing.Path == a.Path {
+			existing.ETag = a.ETag
+			existing.SHA256 = a.SHA256
+			existing.MIME = a.MIME
+			existing.SizeBytes = a.SizeBytes
+			*a = *existing
+			return nil
+		}
+	}
+
+	a.CreatedAt = time.Now()
+
+	p.assets[a.Id] = a
+
+	return nil
+}
+
+func (p *v1MockPersister) UpsertFile(ctx context.Context, f *v1.File) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	for _, existing := range p.files {
+		if existing.ArtifactId == f.ArtifactId && existing.Path == f.Path && existing.Filename == f.Filename {
+			existing.AssetId = f.AssetId
+			existing.UpdatedAt = time.Now()
+			*f = *existing
+			return nil
+		}
+	}
+
+	f.CreatedAt = time.Now()
+	f.UpdatedAt = time.Now()
+
+	p.files[f.Id] = f
+
+	return nil
+}
+
+func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Skill, len(p.skills))
-	maps.Copy(cpy, p.skills)
-	return cpy
+	var files []v1.File
+	for _, f := range p.files {
+		if f.ArtifactId == artifactId {
+			fileCopy := *f
+			if asset, ok := p.assets[f.AssetId]; ok {
+				fileCopy.Asset = asset
+			}
+			files = append(files, fileCopy)
+		}
+	}
+	return files, nil
 }
 
 func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 	options := persister.NewOptions(opts...)
 
 	p := &v1MockPersister{
-		options:  options,
-		jobs:     map[uuid.UUID]*v1.Job{},
-		projects: map[uuid.UUID]*v1.Project{},
-		spaces:   map[uuid.UUID]*v1.Space{},
-		skills:   map[uuid.UUID]*v1.Skill{},
-		sessions: map[uuid.UUID]*v1.Session{},
-		tasks:    map[uuid.UUID]*v1.Task{},
-		messages: map[uuid.UUID]*v1.Message{},
-		assets:   map[uuid.UUID]*v1.Asset{},
-		mtx:      sync.RWMutex{},
+		options:   options,
+		jobs:      map[uuid.UUID]*v1.Job{},
+		projects:  map[uuid.UUID]*v1.Project{},
+		spaces:    map[uuid.UUID]*v1.Space{},
+		skills:    map[uuid.UUID]*v1.Skill{},
+		sessions:  map[uuid.UUID]*v1.Session{},
+		tasks:     map[uuid.UUID]*v1.Task{},
+		messages:  map[uuid.UUID]*v1.Message{},
+		assets:    map[uuid.UUID]*v1.Asset{},
+		artifacts: map[uuid.UUID]*v1.Artifact{},
+		files:     map[uuid.UUID]*v1.File{},
+		mtx:       sync.RWMutex{},
 	}
 
 	return p
