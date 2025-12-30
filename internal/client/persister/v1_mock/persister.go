@@ -430,6 +430,19 @@ func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a
 	return nil
 }
 
+func (p *v1MockPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	var arts []v1.Artifact
+	for _, a := range p.artifacts {
+		if a.ProjectId == projectId {
+			artifactCopy := *a
+			arts = append(arts, artifactCopy)
+		}
+	}
+	return arts, nil
+}
+
 func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()

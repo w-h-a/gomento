@@ -628,6 +628,31 @@ func (p *v1PGPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *
 	return tx.Commit()
 }
 
+func (p *v1PGPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error) {
+	query := `SELECT id, project_id, created_at, updated_at FROM artifacts WHERE project_id = $1`
+
+	rows, err := p.conn.QueryContext(ctx, query, projectId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var artifacts []v1.Artifact
+	for rows.Next() {
+		var a v1.Artifact
+		if err := rows.Scan(&a.Id, &a.ProjectId, &a.CreatedAt, &a.UpdatedAt); err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, a)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return artifacts, nil
+}
+
 func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
 	query := `
 		SELECT 

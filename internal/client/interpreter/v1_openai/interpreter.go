@@ -66,12 +66,12 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message)
 	return &result, nil
 }
 
-func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "current_task_count", len(currentTasks))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.extractSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, currentTasks)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, files, currentTasks)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -188,7 +188,7 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message) string {
 	return sb.String()
 }
 
-func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, tasks []v1.Task) string {
+func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1.File, tasks []v1.Task) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Tasks:\n")
@@ -216,6 +216,18 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, tasks []v1
 			lines = append(lines, d.packMessageLine(msg.Role, p))
 		}
 		sb.WriteString(fmt.Sprintf("<message id=%d> %s </message>\n", i, strings.Join(lines, "\n")))
+	}
+
+	sb.WriteString("\n## Files:\n")
+
+	if len(files) == 0 {
+		sb.WriteString("(No files)\n")
+	} else {
+		for _, f := range files {
+			if f.Asset != nil {
+				sb.WriteString(fmt.Sprintf("- %s (ID: %s) [Size: %d bytes]\n", f.Path, f.Id, f.Asset.SizeBytes))
+			}
+		}
 	}
 
 	sb.WriteString("\nAnalyze and determine actions.\n")
