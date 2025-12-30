@@ -22,12 +22,15 @@ type v1MockFiler struct {
 func (f *v1MockFiler) UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
+
 	path := "uploads/" + fh.Filename
 	f.uploads[path] = fh.Size
+
 	contentType := fh.Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+
 	return &v1.Asset{
 		Container: f.options.Container,
 		Path:      path,
@@ -39,11 +42,15 @@ func (f *v1MockFiler) UploadMultipart(ctx context.Context, fh *multipart.FileHea
 func (f *v1MockFiler) UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
 	f.mtx.Lock()
 	defer f.mtx.Unlock()
+
 	path := "uploads/" + filename
+
 	f.uploads[path] = size
+
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
+
 	return &v1.Asset{
 		Container: f.options.Container,
 		Path:      path,

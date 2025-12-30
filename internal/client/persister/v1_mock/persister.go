@@ -34,7 +34,8 @@ func (p *v1MockPersister) CreateJob(ctx context.Context, job *v1.Job) error {
 	defer p.mtx.Unlock()
 	job.CreatedAt = time.Now()
 	job.UpdatedAt = time.Now()
-	p.jobs[job.Id] = job
+	cpy := *job
+	p.jobs[job.Id] = &cpy
 	return nil
 }
 
@@ -81,7 +82,8 @@ func (p *v1MockPersister) Jobs() map[uuid.UUID]*v1.Job {
 func (p *v1MockPersister) CreateProject(ctx context.Context, proj *v1.Project) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	p.projects[proj.Id] = proj
+	cpy := *proj
+	p.projects[proj.Id] = &cpy
 	return nil
 }
 
@@ -96,7 +98,8 @@ func (p *v1MockPersister) Projects() map[uuid.UUID]*v1.Project {
 func (p *v1MockPersister) CreateSpace(ctx context.Context, space *v1.Space) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	p.spaces[space.Id] = space
+	cpy := *space
+	p.spaces[space.Id] = &cpy
 	return nil
 }
 
@@ -113,7 +116,8 @@ func (p *v1MockPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space
 func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	p.skills[skill.Id] = skill
+	cpy := *skill
+	p.skills[skill.Id] = &cpy
 	return nil
 }
 
@@ -128,7 +132,8 @@ func (p *v1MockPersister) Skills() map[uuid.UUID]*v1.Skill {
 func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-	p.sessions[sess.Id] = sess
+	cpy := *sess
+	p.sessions[sess.Id] = &cpy
 	return nil
 }
 
@@ -305,9 +310,7 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 
-	if msg.CreatedAt.IsZero() {
-		msg.CreatedAt = time.Now().UTC()
-	}
+	msg.CreatedAt = time.Now()
 
 	var lastMsg *v1.Message
 	for _, m := range p.messages {
@@ -329,14 +332,21 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 		if partIdx < len(msg.Parts) {
 			msg.Parts[partIdx].AssetId = &a.Id
 		}
-		p.assets[a.Id] = a
+		cpy := *a
+		p.assets[a.Id] = &cpy
 	}
 
 	if p.messages == nil {
 		p.messages = make(map[uuid.UUID]*v1.Message)
 	}
 
-	p.messages[msg.Id] = msg
+	cpy := *msg
+	if msg.Parts != nil {
+		partsCpy := make([]v1.Part, len(msg.Parts))
+		copy(partsCpy, msg.Parts)
+		cpy.Parts = partsCpy
+	}
+	p.messages[msg.Id] = &cpy
 
 	return nil
 }
@@ -387,35 +397,20 @@ func (p *v1MockPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) er
 	defer p.mtx.Unlock()
 	a.CreatedAt = time.Now()
 	a.UpdatedAt = time.Now()
-	p.artifacts[a.Id] = a
+	cpy := *a
+	p.artifacts[a.Id] = &cpy
 	return nil
 }
 
-func (p *v1MockPersister) CreateAsset(ctx context.Context, a *v1.Asset) error {
+func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
-
-	for _, existing := range p.assets {
-		if existing.Container == a.Container && existing.Path == a.Path {
-			existing.ETag = a.ETag
-			existing.SHA256 = a.SHA256
-			existing.MIME = a.MIME
-			existing.SizeBytes = a.SizeBytes
-			*a = *existing
-			return nil
-		}
-	}
 
 	a.CreatedAt = time.Now()
+	assetCpy := *a
+	p.assets[a.Id] = &assetCpy
 
-	p.assets[a.Id] = a
-
-	return nil
-}
-
-func (p *v1MockPersister) UpsertFile(ctx context.Context, f *v1.File) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
+	f.AssetId = a.Id
 
 	for _, existing := range p.files {
 		if existing.ArtifactId == f.ArtifactId && existing.Path == f.Path && existing.Filename == f.Filename {
@@ -429,7 +424,8 @@ func (p *v1MockPersister) UpsertFile(ctx context.Context, f *v1.File) error {
 	f.CreatedAt = time.Now()
 	f.UpdatedAt = time.Now()
 
-	p.files[f.Id] = f
+	fileCpy := *f
+	p.files[f.Id] = &fileCpy
 
 	return nil
 }
@@ -442,7 +438,8 @@ func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) (
 		if f.ArtifactId == artifactId {
 			fileCopy := *f
 			if asset, ok := p.assets[f.AssetId]; ok {
-				fileCopy.Asset = asset
+				cpy := *asset
+				fileCopy.Asset = &cpy
 			}
 			files = append(files, fileCopy)
 		}

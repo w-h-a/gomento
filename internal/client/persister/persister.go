@@ -40,7 +40,6 @@ type V1Persister interface {
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 
 	CreateArtifact(ctx context.Context, a *v1.Artifact) error
-	CreateAsset(ctx context.Context, a *v1.Asset) error
-	UpsertFile(ctx context.Context, f *v1.File) error
+	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error
 	ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error)
 }
