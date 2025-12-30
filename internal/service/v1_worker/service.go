@@ -72,6 +72,30 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 	maxIterations := 3
 
+	sess, err := s.persister.GetSession(ctx, sessionId)
+	if err != nil {
+		return err
+	}
+
+	if sess == nil {
+		return fmt.Errorf("session %v not found", sessionId)
+	}
+
+	var files []v1.File
+
+	artifacts, err := s.persister.ListArtifacts(ctx, sess.ProjectId)
+	if err != nil {
+		return err
+	}
+
+	for _, art := range artifacts {
+		fs, err := s.persister.ListFiles(ctx, art.Id)
+		if err != nil {
+			return err
+		}
+		files = append(files, fs...)
+	}
+
 	for range maxIterations {
 		msgs, err := s.persister.GetMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
 		if err != nil {
@@ -83,7 +107,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 			return err
 		}
 
-		actions, err := s.interpreter.Extract(ctx, msgs, tasks)
+		actions, err := s.interpreter.Extract(ctx, msgs, files, tasks)
 		if err != nil {
 			return err
 		}

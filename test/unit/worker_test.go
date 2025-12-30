@@ -138,6 +138,58 @@ func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
 	assert.Len(t, tasks, 0)
 }
 
+func TestProcessJob_Extract_IncludesProjectContext(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter()
+
+	s := v1worker.NewV1Service(p, d, i)
+
+	ctx := context.Background()
+
+	projectId := uuid.New()
+	_ = p.CreateProject(ctx, &v1.Project{Id: projectId, Name: "Context Project"})
+
+	artifactId := uuid.New()
+	_ = p.CreateArtifact(ctx, &v1.Artifact{Id: artifactId, ProjectId: projectId})
+
+	fileId := uuid.New()
+	expectedPath := "src/main.go"
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:         fileId,
+		ArtifactId: artifactId,
+		Path:       expectedPath,
+		Filename:   "main.go",
+	}, &v1.Asset{Id: uuid.New()})
+
+	sessionId := uuid.New()
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, ProjectId: projectId})
+
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeExtract,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	_ = p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert: State Change (Job Status)
+	updatedJob := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updatedJob.Status)
+
+	// Assert: External Interaction
+	seenFiles := i.ExtractFiles()
+	assert.Len(t, seenFiles, 1, "Interpreter should have seen 1 file from the project")
+	assert.Equal(t, fileId, seenFiles[0].Id)
+	assert.Equal(t, expectedPath, seenFiles[0].Path)
+}
+
 func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")

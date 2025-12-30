@@ -41,5 +41,6 @@ type V1Persister interface {
 
 	CreateArtifact(ctx context.Context, a *v1.Artifact) error
 	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error
+	ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error)
 	ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error)
 }
