@@ -595,8 +595,7 @@ func (p *v1PGPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *
 			etag=EXCLUDED.etag,
 			sha256=EXCLUDED.sha256,
 			mime=EXCLUDED.mime,
-			size_bytes=EXCLUDED.size_bytes,
-			updated_at=NOW() 
+			size_bytes=EXCLUDED.size_bytes
 		RETURNING id, created_at`
 
 	if err := tx.QueryRowContext(

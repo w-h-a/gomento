@@ -20,11 +20,13 @@ import (
 	v1openai "github.com/w-h-a/gomento/internal/client/interpreter/v1_openai"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
+	v1artifacthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_artifact"
 	v1projecthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_project"
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
+	v1artifactservice "github.com/w-h-a/gomento/internal/service/v1_artifact"
 	v1projectservice "github.com/w-h-a/gomento/internal/service/v1_project"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1spaceservice "github.com/w-h-a/gomento/internal/service/v1_space"
@@ -79,6 +81,7 @@ func Run(c *cli.Context) error {
 	var projectService *v1projectservice.V1Service
 	var spaceService *v1spaceservice.V1Service
 	var sessionService *v1sessionservice.V1Service
+	var artifactService *v1artifactservice.V1Service
 	var httpServer server.Server
 	if mode == "" || mode == "server" {
 		slog.InfoContext(ctx, "initiating http server")
@@ -111,6 +114,11 @@ func Run(c *cli.Context) error {
 			qname,
 		)
 		stopChannels["session"] = make(chan struct{})
+		artifactService = v1artifactservice.NewV1Service(
+			p,
+			f,
+		)
+		stopChannels["artifact"] = make(chan struct{})
 
 		httpServer, err = InitV1HttpServer(
 			ctx,
@@ -118,6 +126,7 @@ func Run(c *cli.Context) error {
 			projectService,
 			spaceService,
 			sessionService,
+			artifactService,
 		)
 		stopChannels["httpserver"] = make(chan struct{})
 	}
@@ -173,6 +182,17 @@ func Run(c *cli.Context) error {
 			slog.InfoContext(ctx, "session service running")
 			errCh <- sessionService.Run(
 				stopChannels["session"],
+				nil,
+				nil,
+			)
+		}()
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slog.InfoContext(ctx, "artifact service running")
+			errCh <- artifactService.Run(
+				stopChannels["artifact"],
 				nil,
 				nil,
 			)
@@ -277,12 +297,13 @@ func InitV1HttpServer(
 	proj *v1projectservice.V1Service,
 	spac *v1spaceservice.V1Service,
 	sess *v1sessionservice.V1Service,
+	art *v1artifactservice.V1Service,
 ) (server.Server, error) {
 	srv := httpserver.NewServer(
 		server.WithAddress(addr),
 	)
 
-	v1, err := InitV1Router(ctx, proj, spac, sess)
+	v1, err := InitV1Router(ctx, proj, spac, sess, art)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init router: %w", err)
 	}
@@ -294,7 +315,13 @@ func InitV1HttpServer(
 	return srv, nil
 }
 
-func InitV1Router(ctx context.Context, proj *v1projectservice.V1Service, spac *v1spaceservice.V1Service, sess *v1sessionservice.V1Service) (*mux.Router, error) {
+func InitV1Router(
+	ctx context.Context,
+	proj *v1projectservice.V1Service,
+	spac *v1spaceservice.V1Service,
+	sess *v1sessionservice.V1Service,
+	art *v1artifactservice.V1Service,
+) (*mux.Router, error) {
 	router := mux.NewRouter()
 	v1 := router.PathPrefix("/api/v1").Subrouter()
 
@@ -312,6 +339,11 @@ func InitV1Router(ctx context.Context, proj *v1projectservice.V1Service, spac *v
 	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.GetTasks)
 	v1.Methods("POST").Path("/sessions/{session_id}/checkpoint").HandlerFunc(sessionHandler.CheckpointSession)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
+
+	artifactHandler := v1artifacthttphandler.NewV1Handler(art)
+	v1.Methods("POST").Path("/artifacts").HandlerFunc(artifactHandler.Create)
+	v1.Methods("POST").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.UploadFile)
+	v1.Methods("GET").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.ListFiles)
 
 	return v1, nil
 }
