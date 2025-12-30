@@ -155,16 +155,16 @@ erDiagram
     PROJECTS ||--|{ SESSIONS : ""
     PROJECTS ||--|{ ARTIFACTS : ""
     
-    SPACES ||--|{ SKILLS : ""
+    SPACES ||--o{ SKILLS : ""
     SPACES |o--o{ SESSIONS : ""
     
-    SESSIONS ||--|{ TASKS : ""
+    SESSIONS ||--o{ TASKS : ""
     TASKS |o--o{ MESSAGES : ""
-    SESSIONS ||--|{ MESSAGES : ""
+    SESSIONS ||--o{ MESSAGES : ""
 
     MESSAGES ||--o{ MESSAGE_ASSETS : ""
-    ASSETS ||--|{ MESSAGE_ASSETS : ""
+    ASSETS ||--o{ MESSAGE_ASSETS : ""
 
-    ARTIFACTS ||--|{ FILES : ""
-    FILES }|--|| ASSETS : ""
+    ARTIFACTS ||--o{ FILES : ""
+    ASSETS ||--o{ FILES : ""
 ```
