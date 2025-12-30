@@ -580,25 +580,37 @@ func (p *v1PGPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) erro
 	return p.conn.QueryRowContext(ctx, query, a.Id, a.ProjectId).Scan(&a.CreatedAt, &a.UpdatedAt)
 }
 
-func (p *v1PGPersister) CreateAsset(ctx context.Context, a *v1.Asset) error {
-	query := `
+func (p *v1PGPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *v1.Asset) error {
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// upsert Asset
+	assetQuery := `
 		INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (container, path) DO UPDATE SET 
 			etag=EXCLUDED.etag,
 			sha256=EXCLUDED.sha256,
 			mime=EXCLUDED.mime,
-			size_bytes=EXCLUDED.size_bytes
+			size_bytes=EXCLUDED.size_bytes,
+			updated_at=NOW() 
 		RETURNING id, created_at`
 
-	return p.conn.QueryRowContext(
-		ctx, query,
+	if err := tx.QueryRowContext(
+		ctx, assetQuery,
 		a.Id, a.Container, a.Path, a.ETag, a.SHA256, a.MIME, a.SizeBytes,
-	).Scan(&a.Id, &a.CreatedAt)
-}
+	).Scan(&a.Id, &a.CreatedAt); err != nil {
+		return err
+	}
 
-func (p *v1PGPersister) UpsertFile(ctx context.Context, f *v1.File) error {
-	query := `
+	// link File to Asset
+	f.AssetId = a.Id
+
+	// upsert File Pointer
+	fileQuery := `
 		INSERT INTO files (id, artifact_id, asset_id, path, filename, meta)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (artifact_id, path, filename) 
@@ -606,11 +618,15 @@ func (p *v1PGPersister) UpsertFile(ctx context.Context, f *v1.File) error {
 			asset_id = EXCLUDED.asset_id, 
 			meta = EXCLUDED.meta, 
 			updated_at = NOW()
-		RETURNING created_at, updated_at`
+		RETURNING id, created_at, updated_at`
 
-	return p.conn.QueryRowContext(ctx, query,
+	if err := tx.QueryRowContext(ctx, fileQuery,
 		f.Id, f.ArtifactId, f.AssetId, f.Path, f.Filename, f.Meta,
-	).Scan(&f.CreatedAt, &f.UpdatedAt)
+	).Scan(&f.Id, &f.CreatedAt, &f.UpdatedAt); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
