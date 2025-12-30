@@ -27,7 +27,7 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID) (*v1.Artifa
 	return a, nil
 }
 
-func (s *V1Service) CreateFile(ctx context.Context, in CreateFileInput) (*v1.File, error) {
+func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.File, error) {
 	asset, err := s.filer.UploadReader(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
 	if err != nil {
 		return nil, err

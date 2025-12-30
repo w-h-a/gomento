@@ -15,7 +15,7 @@ import (
 	v1artifact "github.com/w-h-a/gomento/internal/service/v1_artifact"
 )
 
-func TestService_Artifact_CreateFile(t *testing.T) {
+func TestService_Artifact_UploadFile(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -34,7 +34,7 @@ func TestService_Artifact_CreateFile(t *testing.T) {
 
 	// 2. Act
 	content := "package main"
-	file, err := s.CreateFile(ctx, v1artifact.CreateFileInput{
+	file, err := s.UploadFile(ctx, v1artifact.CreateFileInput{
 		ArtifactId: artifactId,
 		Path:       "/src",
 		Filename:   "main.go",
@@ -62,7 +62,7 @@ func TestService_Artifact_CreateFile(t *testing.T) {
 
 	// Act
 	updatedContent := "package main\n\nfunc main() {}"
-	updatedFile, err := s.CreateFile(ctx, v1artifact.CreateFileInput{
+	updatedFile, err := s.UploadFile(ctx, v1artifact.CreateFileInput{
 		ArtifactId: artifactId,
 		Path:       "/src",
 		Filename:   "main.go",
