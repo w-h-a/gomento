@@ -123,7 +123,7 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 }
 
 func (d *v1OpenaiInterpreter) distillSystemPrompt() string {
-	return `You are an expert at distilling user intents into automation "Skills".
+	return `You are an expert at distilling Skills from Session data.
 A Skill consists of two parts:
 1. Trigger: A concise phrase describing WHEN this should happen.
 2. SOP: A detailed description of WHAT should happen (Standard Operating Procedure).
@@ -133,43 +133,66 @@ Example: {"trigger": "every morning at 9am", "sop": "check jira for high priorit
 }
 
 func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
-	return `You are an expert at extracting "Tasks" and distinguishing tasks or actions from thought during a chat session. Your goal is to maintain a structured "Project Plan" (Task List) that accurately reflects the conversation history.
+	return `You are an expert at extracting Tasks from Session data, managing Task Statuses, and distinguishing Tasks or Actions from mere Thought.
 
-### Core Criteria
-- **MECE (Mutually Exclusive, Collectively Exhaustive):** Your tasks should cover all work discussed without overlapping.
-- **State Tracking:** You are the source of truth for what is "Pending", "Running", or "Success".
-- **Evidence-Based:** You must link messages to tasks to prove why a status changed.
+## Core Responsibilities
+1. **Task Tracking**: Extract tasks from user-agent sessions.
+2. **Message Matching**: Match messages to existing tasks based on context and content  
+3. **Status Updating**: Update task statuses based on progress and completion signals
 
-### Your Tools
-1. **insert_task**:
-   - Use this ONLY for *new* distinct units of work.
-   - Do not create tasks for "Thinking" or "Talking" (use Thought for that).
-   - Tasks must be actionable (e.g., "Fix Nginx Config", not "Think about Nginx").
+## Task System
+**Structure**: 
+- Tasks have description, status, and sequential order (task_order=1, 2, ...) within sessions. 
+- Messages link to tasks via their IDs.
 
-2. **update_task**:
-   - Use this to change status (e.g., pending -> success) or refine a description.
-   - IMPORTANT: A task is "Success" ONLY when the user confirms it or the output is visible.
+**Statuses**: 
+- pending
+- running
+- success
+- failed
 
-3. **append_messages_to_task**:
-   - Use this to attach "Evidence".
-   - IF a user says "I did X", attach that message to Task X.
-   - IF you provide code for Y, attach that message to Task Y.
+## Task Creation/Modification
+- Tasks are often confirmed by the agent's response to the user's requirements; don't invent them.
+- Task granularity or individuation should be a happy medium: do not extract excessive subtasks, but do not lump everything in the session into one task.
+- Ensure the new tasks are mutually exclusive and collectively exhaustive of existing tasks.
+- Make sure to locate the correct existing task and modify it when necessary.
+- No matter whether the task is pending, running, or not, your job is to collect all the tasks mentioned during the session.
+- When a user asks for task modification and the agent confirms, you need to think:
+	a. If the user/agent is referring to an existing task, modify the existing task’s description using the update_task tool.
+	b. If the user/agent is creating a new task that isn't similar to an existing task, create a new task using the insert_task tool.
 
-4. **append_messages_to_thought**:
-   - Use this for "Meta-Context".
-   - Attach messages about strategy, confusion, clarification, or future plans.
-   - This keeps the actual Task List clean.
+## Update Task Status 
+- running: When task work begins or is actively discussed
+- success: When completion is confirmed or deliverables provided
+- failed: When explicit errors occur or tasks are abandoned
+- pending: When not yet started
 
-5. **finish**:
-   - Call this ONLY when the Task List perfectly matches the conversation state.
+## Append Messages to Task
+- Match agent responses/actions to existing task descriptions and contexts
+- Ensure the messages you append to a task actually relate to the task’s description, status, etc; do not perform random linking.
 
-### Execution Loop
-1. **Read** the "Current Tasks" and "Messages".
-2. **Think** step-by-step:
-   - "Does the user's last message complete Task 2?" -> If yes, Update Task 2 Status + Append Message.
-   - "Did the user ask for something new?" -> If yes, Insert Task.
-   - "Is this just discussion?" -> Append to Thought.
-3. **Act** by calling the appropriate tools.
+## Append Messages to Thought
+- Thought messages often consist of user-agent session that clarify what tasks to do next.
+- Append those messages to thoughts instead of tasks.
+
+## Input Format
+- Input will be markdown-formatted text, with the following sections:
+  - ## Current Tasks: existing tasks, their orders, descriptions, and statuses
+  - ## Previous Messages: the history of user/agent messages helps provide context. [no message id, maybe truncated]
+  - ## Current Messages: the most recent messages that you need to analyze [with message ids]
+  - ## Files: any files attached by the user/agent during the session
+- Message with ID format: <message id=N> ... </message>, inside the tag is the message content, the id field indicates the message id.
+
+## Report Your Thinking
+Use extremely brief wording to report:
+1. Any new user requirement? What are the tasks?
+2. Given the session messages, do you need to update tasks or create tasks?
+3. Messages are related to which task?
+4. Are any messages related to mere thought instead of a proper task?
+5. Do task statuses need to be updated?
+6. Describe your actions.
+7. Confirm you will call every necessary tool in this response.
+8. Confirm you will call the finish tool once all other tools are called
 `
 }
 
@@ -192,7 +215,6 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1
 	var sb strings.Builder
 
 	sb.WriteString("## Current Tasks:\n")
-
 	if len(tasks) == 0 {
 		sb.WriteString("(No tasks yet)\n")
 	} else {
@@ -208,18 +230,44 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1
 		}
 	}
 
-	sb.WriteString("\n## Messages:\n")
+	var previousMsgs []v1.Message
+	var currentMsgs []v1.Message
 
-	for i, msg := range history {
+	currentIndexStart := 0
+
+	if len(history) > 0 {
+		// TODO: Replace 1 with dynamic count from Extract caller
+		splitIndex := max(len(history)-1, 0)
+
+		previousMsgs = history[:splitIndex]
+		currentMsgs = history[splitIndex:]
+		currentIndexStart = splitIndex
+	}
+
+	sb.WriteString("\n## Previous Messages:\n")
+	if len(previousMsgs) == 0 {
+		sb.WriteString("(No history)\n")
+	} else {
+		for _, msg := range previousMsgs {
+			var lines []string
+			for _, p := range msg.Parts {
+				lines = append(lines, d.packMessageLine(msg.Role, p))
+			}
+			sb.WriteString(strings.Join(lines, "\n") + "\n")
+		}
+	}
+
+	sb.WriteString("\n## Current Messages:\n")
+	for i, msg := range currentMsgs {
 		var lines []string
 		for _, p := range msg.Parts {
 			lines = append(lines, d.packMessageLine(msg.Role, p))
 		}
-		sb.WriteString(fmt.Sprintf("<message id=%d> %s </message>\n", i, strings.Join(lines, "\n")))
+		actualIndex := currentIndexStart + i
+		sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", actualIndex, strings.Join(lines, "\n")))
 	}
 
 	sb.WriteString("\n## Files:\n")
-
 	if len(files) == 0 {
 		sb.WriteString("(No files)\n")
 	} else {
