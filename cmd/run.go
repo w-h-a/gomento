@@ -94,6 +94,7 @@ func Run(c *cli.Context) error {
 		f, err := InitV1Filer(
 			ctx,
 			"http://localhost:9000",
+			"http://localhost:9000",
 			"us-east-1",
 			"gomento-assets",
 			"user",
@@ -276,6 +277,7 @@ func InitV1Interpreter(
 func InitV1Filer(
 	ctx context.Context,
 	endpoint string,
+	publicEndpoint string,
 	region string,
 	container string,
 	user string,
@@ -283,6 +285,7 @@ func InitV1Filer(
 ) (filer.V1Filer, error) {
 	return v1s3.NewV1Filer(
 		filer.WithEndpoint(endpoint),
+		filer.WithPublicEndpoint(publicEndpoint),
 		filer.WithRegion(region),
 		filer.WithContainer(container),
 		filer.WithUser(user),

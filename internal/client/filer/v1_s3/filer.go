@@ -100,7 +100,13 @@ func (f *v1S3Filer) PresignGet(ctx context.Context, path string, expire time.Dur
 		return "", fmt.Errorf("failed to presign get: %w", err)
 	}
 
-	return req.URL, nil
+	url := req.URL
+
+	if len(f.options.PublicEndpoint) > 0 && len(f.options.Endpoint) > 0 {
+		url = strings.Replace(url, f.options.Endpoint, f.options.PublicEndpoint, 1)
+	}
+
+	return url, nil
 }
 
 func NewV1Filer(opts ...filer.Option) filer.V1Filer {

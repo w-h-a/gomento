@@ -5,17 +5,24 @@ import "context"
 type Option func(*Options)
 
 type Options struct {
-	Endpoint  string
-	Region    string
-	Container string
-	User      string
-	Secret    string
-	Context   context.Context
+	Endpoint       string
+	PublicEndpoint string
+	Region         string
+	Container      string
+	User           string
+	Secret         string
+	Context        context.Context
 }
 
 func WithEndpoint(endpoint string) Option {
 	return func(o *Options) {
 		o.Endpoint = endpoint
+	}
+}
+
+func WithPublicEndpoint(endpoint string) Option {
+	return func(o *Options) {
+		o.PublicEndpoint = endpoint
 	}
 }
 

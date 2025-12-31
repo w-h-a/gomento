@@ -29,11 +29,12 @@ import (
 )
 
 const (
-	DB_CONN     = "postgres://user:password@localhost:5432/gomento?sslmode=disable"
-	MINIO_END   = "http://localhost:9000"
-	MINIO_USER  = "user"
-	MINIO_PASS  = "password"
-	TEST_BUCKET = "gomento-assets"
+	DB_CONN      = "postgres://user:password@localhost:5432/gomento?sslmode=disable"
+	MINIO_END    = "http://localhost:9000"
+	MINIO_PUBLIC = "http://localhost:9000"
+	MINIO_USER   = "user"
+	MINIO_PASS   = "password"
+	TEST_BUCKET  = "gomento-assets"
 )
 
 func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
@@ -50,7 +51,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(MINIO_USER, MINIO_PASS, "")),
 		config.WithEndpointResolverWithOptions(aws.EndpointResolverWithOptionsFunc(
 			func(service, region string, options ...any) (aws.Endpoint, error) {
-				return aws.Endpoint{URL: MINIO_END}, nil
+				return aws.Endpoint{URL: MINIO_PUBLIC}, nil
 			},
 		)),
 	)
@@ -73,6 +74,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	f, _ := cmd.InitV1Filer(
 		ctx,
 		MINIO_END,
+		MINIO_PUBLIC,
 		"us-east-1",
 		TEST_BUCKET,
 		MINIO_USER,
