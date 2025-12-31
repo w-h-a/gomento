@@ -28,7 +28,6 @@ graph TD
 
     subgraph "GoMento"
         API[API Gateway]
-        Queue[Queue/Channel]
         Worker[Background Worker]
     end
 
@@ -42,25 +41,23 @@ graph TD
     Agent -- "1. Push Chat Logs, Files, and Assets" --> API
     API -- "2. Upload Assets" --> MinIO
     API -- "3. Save Messages, Files, and Asset Metadata" --> Postgres
-    API -- "4. Produce Job" --> Queue
     
     %% Flow 2: Interpretation
-    Queue -- "5. Consume" --> Worker
-    Worker -- "6. Fetch Context" --> Postgres
-    Worker -- "7. Extract/Distill" --> LLM
-    Worker -- "8. Save Tasks/Skills" --> Postgres
+    Agent -- "4. Extract/Distill" --> API
+    API -- "5. Produce Job" --> Worker
+    Worker -- "6. Trigger Interpretation" --> LLM
+    Worker -- "7. Save Tasks/Skills" --> Postgres
 
     %% Flow 3: Retrieval (Current Session History)
-    Agent -- "9. Get Tasks & Messages (w/ Assets)" --> API
-    API -- "10. Fetch History" --> Postgres
-    API -- "11. Presign URLs" --> MinIO
-    API -- "12. Return History" --> Agent
+    Agent -- "8. Get Tasks & Messages (w/ Assets)" --> API
+    API -- "9. Fetch History" --> Postgres
+    API -- "10. Presign URLs" --> MinIO
+    API -- "11. Return History" --> Agent
 
     %% Flow 4: Retrieval (Skills)
-    Agent -- "13. Ask: 'How do I fix Redis?'" --> API
-    API -- "14. Vector Search" --> Postgres
-    API -- "15. Refine" --> Worker
-    API -- "16. Return SOP" --> Agent
+    Agent -- "12. Ask: 'How do I fix Redis?'" --> API
+    API -- "13. Vector Search" --> Postgres
+    API -- "14. Return SOP" --> Agent
 ```
 
 ### ER Diagram

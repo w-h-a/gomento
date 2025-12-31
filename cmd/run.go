@@ -336,8 +336,8 @@ func InitV1Router(
 	v1.Methods("POST").Path("/sessions/{session_id}/connect_to_space").HandlerFunc(sessionHandler.ConnectToSpace)
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.GetMessages)
-	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.GetTasks)
 	v1.Methods("POST").Path("/sessions/{session_id}/checkpoint").HandlerFunc(sessionHandler.CheckpointSession)
+	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.GetTasks)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
 
 	artifactHandler := v1artifacthttphandler.NewV1Handler(art)
