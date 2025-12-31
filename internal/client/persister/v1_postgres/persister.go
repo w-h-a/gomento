@@ -689,6 +689,33 @@ func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]
 	return files, nil
 }
 
+func (p *v1PGPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error) {
+	query := `
+		SELECT f.id, f.artifact_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+		       a.id, a.container, a.path, a.mime, a.size_bytes
+		FROM files f
+		JOIN assets a ON f.asset_id = a.id
+		WHERE f.artifact_id = $1 AND f.path = $2 AND f.filename = $3`
+
+	var f v1.File
+	var a v1.Asset
+
+	err := p.conn.QueryRowContext(ctx, query, artifactId, path, filename).Scan(
+		&f.Id, &f.ArtifactId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
+		&a.Id, &a.Container, &a.Path, &a.MIME, &a.SizeBytes,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	f.Asset = &a
+
+	return &f, nil
+}
+
 func NewV1Persister(opts ...persister.Option) persister.V1Persister {
 	options := persister.NewOptions(opts...)
 
