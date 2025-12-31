@@ -80,3 +80,52 @@ func TestService_Artifact_UploadFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Len(t, savedFiles, 1, "Should still only be one file after upsert")
 }
+
+func TestService_GetFile(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+
+	s := v1artifact.NewV1Service(p, f)
+
+	ctx := context.Background()
+
+	artifactId := uuid.New()
+	_ = p.CreateArtifact(ctx, &v1.Artifact{Id: artifactId, ProjectId: uuid.New()})
+
+	expectedPath := "src/main.go"
+	assetPath := "uploads/123/main.go"
+
+	fileId := uuid.New()
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:         fileId,
+		ArtifactId: artifactId,
+		Path:       "src",
+		Filename:   "main.go",
+	}, &v1.Asset{
+		Id:   uuid.New(),
+		Path: assetPath,
+	})
+
+	// Act
+	file, url, err := s.GetFile(ctx, artifactId, expectedPath, false)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, fileId, file.Id)
+	assert.Empty(t, url, "URL should be empty when not requested")
+
+	// Act
+	file, url, err = s.GetFile(ctx, artifactId, expectedPath, true)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, fileId, file.Id)
+	assert.Contains(t, url, "https://mock", "Should return a presigned URL")
+	assert.Contains(t, url, assetPath, "URL should point to the physical asset")
+}

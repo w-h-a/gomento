@@ -2,6 +2,7 @@ package v1artifact
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -104,6 +105,46 @@ func (h *v1Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, files)
+}
+
+func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["artifact_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Artifact ID")
+		return
+	}
+
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Missing 'path' query parameter")
+		return
+	}
+
+	withUrl := r.URL.Query().Get("with_url") == "true"
+
+	file, url, err := h.service.GetFile(ctx, id, path, withUrl)
+	if err != nil {
+		if errors.Is(err, v1artifact.ErrFileNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "File not found")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	resp := map[string]any{
+		"file": file,
+	}
+
+	if url != "" {
+		resp["public_url"] = url
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, resp)
 }
 
 func NewV1Handler(s *v1artifact.V1Service) *v1Handler {

@@ -460,6 +460,24 @@ func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) (
 	return files, nil
 }
 
+func (p *v1MockPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	for _, f := range p.files {
+		if f.ArtifactId == artifactId && f.Path == path && f.Filename == filename {
+			res := *f
+			if asset, ok := p.assets[f.AssetId]; ok {
+				assetRes := *asset
+				res.Asset = &assetRes
+			}
+			return &res, nil
+		}
+	}
+
+	return nil, nil
+}
+
 func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 	options := persister.NewOptions(opts...)
 

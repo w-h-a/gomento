@@ -344,6 +344,7 @@ func InitV1Router(
 	v1.Methods("POST").Path("/artifacts").HandlerFunc(artifactHandler.Create)
 	v1.Methods("POST").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.UploadFile)
 	v1.Methods("GET").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.ListFiles)
+	v1.Methods("GET").Path("/artifacts/{artifact_id}/file").HandlerFunc(artifactHandler.GetFile)
 
 	return v1, nil
 }

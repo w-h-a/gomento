@@ -86,4 +86,24 @@ func TestAPI_Artifact(t *testing.T) {
 
 	assetMap := files[0]["asset"].(map[string]any)
 	assert.Equal(t, assetPath, assetMap["path"])
+
+	// Act
+	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/artifacts/%s/file?path=/etc/config.yaml&with_url=true", baseURL, artId), nil)
+	rsp, err = client.Do(req)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+
+	var singleRsp struct {
+		File      map[string]any `json:"file"`
+		PublicUrl string         `json:"public_url"`
+	}
+	err = json.NewDecoder(rsp.Body).Decode(&singleRsp)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "config.yaml", singleRsp.File["filename"])
+	assert.Equal(t, "/etc", singleRsp.File["path"])
+	assert.NotEmpty(t, singleRsp.PublicUrl)
+	assert.Contains(t, singleRsp.PublicUrl, TEST_BUCKET)
 }
