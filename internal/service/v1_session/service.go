@@ -122,7 +122,7 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 	return msg, nil
 }
 
-func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetMessagesOutput, error) {
+func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*ListMessagesOutput, error) {
 	var afterT time.Time
 	var afterId uuid.UUID
 	var err error
@@ -143,7 +143,7 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 		limit = 100
 	}
 
-	msgs, err := s.persister.GetMessages(
+	msgs, err := s.persister.ListMessages(
 		ctx,
 		in.SessionId,
 		persister.WithLimit(limit+1),
@@ -154,7 +154,7 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 		return nil, err
 	}
 
-	out := &GetMessagesOutput{
+	out := &ListMessagesOutput{
 		Items:   msgs,
 		HasMore: false,
 	}
@@ -200,7 +200,7 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 	return out, nil
 }
 
-func (s *V1Service) GetTasks(ctx context.Context, in GetTasksInput) (*GetTasksOutput, error) {
+func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTasksOutput, error) {
 	sess, err := s.persister.GetSession(ctx, in.SessionId)
 	if err != nil {
 		return nil, err
@@ -215,7 +215,7 @@ func (s *V1Service) GetTasks(ctx context.Context, in GetTasksInput) (*GetTasksOu
 		return nil, err
 	}
 
-	out := &GetTasksOutput{
+	out := &ListTasksOutput{
 		Items: tasks,
 	}
 

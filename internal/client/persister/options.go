@@ -39,9 +39,9 @@ const (
 	SortOrderAsc
 )
 
-type GetMessagesOption func(*GetMessagesOptions)
+type ListMessagesOption func(*ListMessagesOptions)
 
-type GetMessagesOptions struct {
+type ListMessagesOptions struct {
 	Limit          int
 	Sort           SortOrder
 	AfterCreatedAt time.Time
@@ -49,33 +49,58 @@ type GetMessagesOptions struct {
 	Context        context.Context
 }
 
-func WithLimit(limit int) GetMessagesOption {
-	return func(gmo *GetMessagesOptions) {
+func WithLimit(limit int) ListMessagesOption {
+	return func(gmo *ListMessagesOptions) {
 		gmo.Limit = limit
 	}
 }
 
-func WithSort(sort SortOrder) GetMessagesOption {
-	return func(gmo *GetMessagesOptions) {
+func WithSort(sort SortOrder) ListMessagesOption {
+	return func(gmo *ListMessagesOptions) {
 		gmo.Sort = sort
 	}
 }
 
-func WithAfterCreatedAt(afterCreatedAt time.Time) GetMessagesOption {
-	return func(gmo *GetMessagesOptions) {
+func WithAfterCreatedAt(afterCreatedAt time.Time) ListMessagesOption {
+	return func(gmo *ListMessagesOptions) {
 		gmo.AfterCreatedAt = afterCreatedAt
 	}
 }
 
-func WithAfterId(id uuid.UUID) GetMessagesOption {
-	return func(gmo *GetMessagesOptions) {
+func WithAfterId(id uuid.UUID) ListMessagesOption {
+	return func(gmo *ListMessagesOptions) {
 		gmo.AfterId = id
 	}
 }
 
-func NewGetMessagesOptions(opts ...GetMessagesOption) GetMessagesOptions {
-	options := GetMessagesOptions{
+func NewListMessagesOptions(opts ...ListMessagesOption) ListMessagesOptions {
+	options := ListMessagesOptions{
 		Sort:    SortOrderDesc,
+		Context: context.Background(),
+	}
+
+	for _, fn := range opts {
+		fn(&options)
+	}
+
+	return options
+}
+
+type ListFilesOption func(*ListFilesOptions)
+
+type ListFilesOptions struct {
+	PathPrefix string
+	Context    context.Context
+}
+
+func WithPathPrefix(prefix string) ListFilesOption {
+	return func(lfo *ListFilesOptions) {
+		lfo.PathPrefix = prefix
+	}
+}
+
+func NewListFilesOptions(opts ...ListFilesOption) ListFilesOptions {
+	options := ListFilesOptions{
 		Context: context.Background(),
 	}
 

@@ -60,8 +60,19 @@ func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.Fil
 	return file, nil
 }
 
-func (s *V1Service) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
-	return s.persister.ListFiles(ctx, artifactId)
+func (s *V1Service) ListFiles(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {
+	fs, err := s.persister.ListFiles(
+		ctx,
+		in.ArtifactId,
+		persister.WithPathPrefix(in.PathPrefix),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListFilesOutput{
+		Items: fs,
+	}, nil
 }
 
 func (s *V1Service) GetFile(ctx context.Context, artifactId uuid.UUID, logicPath string, withUrl bool) (*v1.File, string, error) {

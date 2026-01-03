@@ -99,13 +99,18 @@ func (h *v1Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := h.service.ListFiles(ctx, id)
+	pathPrefix := r.URL.Query().Get("path")
+
+	out, err := h.service.ListFiles(ctx, v1artifact.ListFilesInput{
+		ArtifactId: id,
+		PathPrefix: pathPrefix,
+	})
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	httphandler.WrtJSON(w, http.StatusOK, files)
+	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
 func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {

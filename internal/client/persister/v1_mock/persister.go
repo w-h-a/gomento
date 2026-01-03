@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -375,11 +376,11 @@ func (p *v1MockPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.M
 	return nil
 }
 
-func (p *v1MockPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.GetMessagesOption) ([]v1.Message, error) {
+func (p *v1MockPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.ListMessagesOption) ([]v1.Message, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	options := persister.NewGetMessagesOptions(opts...)
+	options := persister.NewListMessagesOptions(opts...)
 
 	var sessionMsgs []v1.Message
 	for _, m := range p.messages {
@@ -467,20 +468,32 @@ func (p *v1MockPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID
 	return arts, nil
 }
 
-func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
+func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
+
+	options := persister.NewListFilesOptions(opts...)
+
 	var files []v1.File
 	for _, f := range p.files {
 		if f.ArtifactId == artifactId {
+			if len(options.PathPrefix) > 0 {
+				if !strings.HasPrefix(f.Path, options.PathPrefix) {
+					continue
+				}
+			}
+
 			fileCopy := *f
+
 			if asset, ok := p.assets[f.AssetId]; ok {
 				cpy := *asset
 				fileCopy.Asset = &cpy
 			}
+
 			files = append(files, fileCopy)
 		}
 	}
+
 	return files, nil
 }
 

@@ -97,7 +97,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 	}
 
 	for range maxIterations {
-		msgs, err := s.persister.GetMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
+		msgs, err := s.persister.ListMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
 		if err != nil {
 			return err
 		}
@@ -275,7 +275,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
 		return nil
 	}
 
-	msgs, err := s.persister.GetMessages(
+	msgs, err := s.persister.ListMessages(
 		ctx,
 		sessionId,
 		persister.WithSort(persister.SortOrderAsc),

@@ -81,6 +81,52 @@ func TestService_Artifact_UploadFile(t *testing.T) {
 	assert.Len(t, savedFiles, 1, "Should still only be one file after upsert")
 }
 
+func TestService_ListFiles(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+
+	s := v1artifact.NewV1Service(p, f)
+
+	ctx := context.Background()
+
+	artifactId := uuid.New()
+	_ = p.CreateArtifact(ctx, &v1.Artifact{Id: artifactId, ProjectId: uuid.New()})
+
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id: uuid.New(), ArtifactId: artifactId, Path: "/src", Filename: "main.go",
+	}, &v1.Asset{Id: uuid.New()})
+
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id: uuid.New(), ArtifactId: artifactId, Path: "/", Filename: "README.md",
+	}, &v1.Asset{Id: uuid.New()})
+
+	// Act
+	out1, err := s.ListFiles(ctx, v1artifact.ListFilesInput{
+		ArtifactId: artifactId,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out1.Items, 2)
+
+	// Act
+	out2, err := s.ListFiles(ctx, v1artifact.ListFilesInput{
+		ArtifactId: artifactId,
+		PathPrefix: "/src",
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out2.Items, 1)
+	assert.Equal(t, "main.go", out2.Items[0].Filename)
+}
+
 func TestService_GetFile(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")

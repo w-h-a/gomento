@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	v1artifact "github.com/w-h-a/gomento/internal/service/v1_artifact"
 )
 
 func TestAPI_Artifact(t *testing.T) {
@@ -78,14 +79,39 @@ func TestAPI_Artifact(t *testing.T) {
 	// Assert
 	assert.Equal(t, http.StatusOK, rsp.StatusCode)
 
-	var files []map[string]any
-	json.NewDecoder(rsp.Body).Decode(&files)
-	assert.Len(t, files, 1)
-	assert.Equal(t, "config.yaml", files[0]["filename"])
-	assert.Equal(t, "/etc", files[0]["path"])
+	var out1 v1artifact.ListFilesOutput
+	json.NewDecoder(rsp.Body).Decode(&out1)
+	assert.Len(t, out1.Items, 1)
+	assert.Equal(t, "config.yaml", out1.Items[0].Filename)
+	assert.Equal(t, "/etc", out1.Items[0].Path)
 
-	assetMap := files[0]["asset"].(map[string]any)
-	assert.Equal(t, assetPath, assetMap["path"])
+	a := out1.Items[0].Asset
+	assert.Equal(t, assetPath, a.Path)
+
+	// Act
+	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/artifacts/%s/files?path=/etc", baseURL, artId), nil)
+	rsp, err = client.Do(req)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+
+	var out2 v1artifact.ListFilesOutput
+	json.NewDecoder(rsp.Body).Decode(&out2)
+	assert.Len(t, out2.Items, 1)
+	assert.Equal(t, "/etc", out2.Items[0].Path)
+
+	// Act
+	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/artifacts/%s/files?path=/invalid", baseURL, artId), nil)
+	rsp, err = client.Do(req)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+
+	var out3 v1artifact.ListFilesOutput
+	json.NewDecoder(rsp.Body).Decode(&out3)
+	assert.Len(t, out3.Items, 0)
 
 	// Act
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/artifacts/%s/file?path=/etc/config.yaml&with_url=true", baseURL, artId), nil)
