@@ -196,10 +196,20 @@ func (h *v1Handler) GetTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var status *string
+	if s := r.URL.Query().Get("status"); s != "" {
+		status = &s
+	}
+
 	out, err := h.service.GetTasks(ctx, v1session.GetTasksInput{
 		SessionId: id,
+		Status:    status,
 	})
 	if err != nil {
+		if errors.Is(err, service.ErrSessionNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
+			return
+		}
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
