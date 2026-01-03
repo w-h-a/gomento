@@ -26,6 +26,26 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, name string
 	return p, nil
 }
 
+func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTasksOutput, error) {
+	space, err := s.persister.GetSpace(ctx, in.SpaceId)
+	if err != nil {
+		return nil, err
+	}
+
+	if space == nil {
+		return nil, service.ErrSpaceNotFound
+	}
+
+	tasks, err := s.persister.ListTasksBySpace(ctx, in.SpaceId, in.Status)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListTasksOutput{
+		Items: tasks,
+	}, nil
+}
+
 func NewV1Service(
 	p persister.V1Persister,
 ) *V1Service {

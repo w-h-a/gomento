@@ -85,7 +85,7 @@ func (s *V1Service) GetFile(ctx context.Context, artifactId uuid.UUID, logicPath
 	}
 
 	if file == nil {
-		return nil, "", ErrFileNotFound
+		return nil, "", service.ErrFileNotFound
 	}
 
 	var url string

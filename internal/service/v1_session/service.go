@@ -48,7 +48,7 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spa
 	}
 
 	if sess == nil {
-		return ErrSessionNotFound
+		return service.ErrSessionNotFound
 	}
 
 	space, err := s.persister.GetSpace(ctx, spaceId)
@@ -56,7 +56,7 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spa
 		return err
 	}
 	if space == nil {
-		return ErrSpaceNotFound
+		return service.ErrSpaceNotFound
 	}
 
 	sess.SpaceId = &spaceId
@@ -201,7 +201,16 @@ func (s *V1Service) GetMessages(ctx context.Context, in GetMessagesInput) (*GetM
 }
 
 func (s *V1Service) GetTasks(ctx context.Context, in GetTasksInput) (*GetTasksOutput, error) {
-	tasks, err := s.persister.FetchCurrentTasks(ctx, in.SessionId, nil)
+	sess, err := s.persister.GetSession(ctx, in.SessionId)
+	if err != nil {
+		return nil, err
+	}
+
+	if sess == nil {
+		return nil, service.ErrSessionNotFound
+	}
+
+	tasks, err := s.persister.FetchCurrentTasks(ctx, in.SessionId, in.Status)
 	if err != nil {
 		return nil, err
 	}

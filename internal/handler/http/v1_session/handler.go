@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
+	"github.com/w-h-a/gomento/internal/service"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	"github.com/w-h-a/gomento/internal/util"
 )
@@ -85,11 +86,11 @@ func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.service.ConnectToSpace(ctx, sessionId, sid); err != nil {
-		if errors.Is(err, v1session.ErrSessionNotFound) {
+		if errors.Is(err, service.ErrSessionNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
 			return
 		}
-		if errors.Is(err, v1session.ErrSpaceNotFound) {
+		if errors.Is(err, service.ErrSpaceNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Space not found")
 			return
 		}
