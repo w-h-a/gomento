@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
+	"github.com/w-h-a/gomento/internal/service"
 	v1artifact "github.com/w-h-a/gomento/internal/service/v1_artifact"
 	"github.com/w-h-a/gomento/internal/util"
 )
@@ -128,7 +129,7 @@ func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 
 	file, url, err := h.service.GetFile(ctx, id, path, withUrl)
 	if err != nil {
-		if errors.Is(err, v1artifact.ErrFileNotFound) {
+		if errors.Is(err, service.ErrFileNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "File not found")
 			return
 		}

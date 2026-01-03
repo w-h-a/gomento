@@ -17,6 +17,7 @@ import (
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
+	"github.com/w-h-a/gomento/internal/service"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	"github.com/w-h-a/gomento/internal/util"
 )
@@ -66,7 +67,7 @@ func TestConnectToSpace_FailsForMissingSession(t *testing.T) {
 	err := s.ConnectToSpace(ctx, uuid.New(), uuid.New())
 
 	// Assert: Should Fail
-	assert.ErrorIs(t, err, v1session.ErrSessionNotFound)
+	assert.ErrorIs(t, err, service.ErrSessionNotFound)
 }
 
 func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
@@ -89,7 +90,7 @@ func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
 	err = s.ConnectToSpace(ctx, sess.Id, randomSpaceId)
 
 	// Assert: Should Fail
-	assert.ErrorIs(t, err, v1session.ErrSpaceNotFound)
+	assert.ErrorIs(t, err, service.ErrSpaceNotFound)
 
 	// Assert: State No Update
 	current, err := p.GetSession(ctx, sess.Id)

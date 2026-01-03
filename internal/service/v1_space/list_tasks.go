@@ -1,15 +1,15 @@
-package v1session
+package v1space
 
 import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 )
 
-type GetTasksInput struct {
-	SessionId uuid.UUID
-	Status    *string
+type ListTasksInput struct {
+	SpaceId uuid.UUID
+	Status  *string
 }
 
-type GetTasksOutput struct {
+type ListTasksOutput struct {
 	Items []v1.Task `json:"items"`
 }
