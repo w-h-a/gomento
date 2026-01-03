@@ -113,6 +113,30 @@ func (p *v1MockPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space
 	return nil, nil
 }
 
+func (p *v1MockPersister) ListTasksBySpace(ctx context.Context, spaceId uuid.UUID, statusFilter *string) ([]v1.Task, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	sessionIds := make(map[uuid.UUID]bool)
+	for _, s := range p.sessions {
+		if s.SpaceId != nil && *s.SpaceId == spaceId {
+			sessionIds[s.Id] = true
+		}
+	}
+
+	var results []v1.Task
+	for _, t := range p.tasks {
+		if sessionIds[t.SessionId] {
+			if statusFilter != nil && t.Status != *statusFilter {
+				continue
+			}
+			results = append(results, *t)
+		}
+	}
+
+	return results, nil
+}
+
 func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()

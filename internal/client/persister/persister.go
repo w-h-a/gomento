@@ -22,6 +22,7 @@ type V1Persister interface {
 
 	CreateSpace(ctx context.Context, space *v1.Space) error
 	GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error)
+	ListTasksBySpace(ctx context.Context, spaceId uuid.UUID, status *string) ([]v1.Task, error)
 
 	SaveSkill(ctx context.Context, skill *v1.Skill) error
 
