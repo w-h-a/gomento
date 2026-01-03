@@ -143,7 +143,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Contains(t, uploads, "uploads/log.txt")
 
 	// Assert: Persister Messages
-	msgs, err := p.GetMessages(ctx, sessionId)
+	msgs, err := p.ListMessages(ctx, sessionId)
 	assert.NoError(t, err)
 	assert.Len(t, msgs, 1)
 	assert.Equal(t, "Hello World", msgs[0].Parts[0].Text)
@@ -208,7 +208,7 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	assert.Equal(t, "assistant", msg2.Role)
 
 	// Assert: State
-	stored, err := p.GetMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
+	stored, err := p.ListMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
 	assert.NoError(t, err)
 	assert.Len(t, stored, 2)
 	assert.Equal(t, msg1.Id, stored[0].Id)
@@ -243,7 +243,7 @@ func TestGetMessages_PaginationLogic(t *testing.T) {
 	}
 
 	// Act
-	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId: sessionId,
 		Limit:     2,
 	})
@@ -289,7 +289,7 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 	p.CreateMessageWithAssets(ctx, msg, map[int]*v1.Asset{0: asset})
 
 	// Act
-	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId:          sessionId,
 		Limit:              10,
 		WithAssetPublicUrl: true,
@@ -336,7 +336,7 @@ func TestGetMessages_ReturnsDescendingOrder(t *testing.T) {
 	}, nil)
 
 	// Act
-	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId: sessionId,
 		Limit:     10,
 	})
@@ -363,7 +363,7 @@ func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId: uuid.New(),
 		Limit:     10,
 		Cursor:    "this-is-garbage-base64",
@@ -390,7 +390,7 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	out, err := s.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId: uuid.New(),
 		Limit:     10,
 	})

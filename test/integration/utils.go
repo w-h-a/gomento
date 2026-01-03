@@ -173,7 +173,7 @@ func getMessages(
 	limit int,
 	cursor string,
 	withUrl bool,
-) v1session.GetMessagesOutput {
+) v1session.ListMessagesOutput {
 	url := fmt.Sprintf("%s/api/v1/sessions/%s/messages?limit=%d&cursor=%s&with_asset_public_url=%v", baseURL, sessId, limit, cursor, withUrl)
 	req, _ := http.NewRequest("GET", url, nil)
 	resp, err := client.Do(req)
@@ -182,7 +182,7 @@ func getMessages(
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var res v1session.GetMessagesOutput
+	var res v1session.ListMessagesOutput
 	err = json.NewDecoder(resp.Body).Decode(&res)
 	require.NoError(t, err)
 

@@ -146,7 +146,7 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, msg)
 }
 
-func (h *v1Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -167,7 +167,7 @@ func (h *v1Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	cursor := r.URL.Query().Get("cursor")
 	withPublicUrl := r.URL.Query().Get("with_asset_public_url") == "true"
 
-	out, err := h.service.GetMessages(ctx, v1session.GetMessagesInput{
+	out, err := h.service.ListMessages(ctx, v1session.ListMessagesInput{
 		SessionId:          id,
 		Limit:              limit,
 		Cursor:             cursor,
@@ -185,7 +185,7 @@ func (h *v1Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) GetTasks(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -201,7 +201,7 @@ func (h *v1Handler) GetTasks(w http.ResponseWriter, r *http.Request) {
 		status = &s
 	}
 
-	out, err := h.service.GetTasks(ctx, v1session.GetTasksInput{
+	out, err := h.service.ListTasks(ctx, v1session.ListTasksInput{
 		SessionId: id,
 		Status:    status,
 	})

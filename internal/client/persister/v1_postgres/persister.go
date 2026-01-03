@@ -525,8 +525,8 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	return tx.Commit()
 }
 
-func (p *v1PGPersister) GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.GetMessagesOption) ([]v1.Message, error) {
-	options := persister.NewGetMessagesOptions(opts...)
+func (p *v1PGPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...persister.ListMessagesOption) ([]v1.Message, error) {
+	options := persister.NewListMessagesOptions(opts...)
 
 	query := `SELECT id, session_id, parent_id, role, parts, created_at FROM messages WHERE session_id = $1`
 	args := []any{sessionId}
@@ -697,17 +697,26 @@ func (p *v1PGPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID) 
 	return artifacts, nil
 }
 
-func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error) {
+func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
+	options := persister.NewListFilesOptions(opts...)
+
 	query := `
 		SELECT 
 			f.id, f.artifact_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
 			a.id, a.container, a.path, a.mime, a.size_bytes
 		FROM files f
 		JOIN assets a ON f.asset_id = a.id
-		WHERE f.artifact_id = $1
-		ORDER BY f.path, f.filename`
+		WHERE f.artifact_id = $1`
+	args := []any{artifactId}
 
-	rows, err := p.conn.QueryContext(ctx, query, artifactId)
+	if len(options.PathPrefix) > 0 {
+		query += " AND f.path LIKE $2"
+		args = append(args, options.PathPrefix+"%")
+	}
+
+	query += ` ORDER BY f.path ASC, f.filename ASC`
+
+	rows, err := p.conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

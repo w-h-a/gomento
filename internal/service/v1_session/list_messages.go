@@ -7,14 +7,14 @@ import (
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 )
 
-type GetMessagesInput struct {
+type ListMessagesInput struct {
 	SessionId          uuid.UUID
 	Limit              int
 	Cursor             string
 	WithAssetPublicUrl bool
 }
 
-type GetMessagesOutput struct {
+type ListMessagesOutput struct {
 	Items      []v1.Message            `json:"items"`
 	NextCursor string                  `json:"next_cursor,omitempty"`
 	HasMore    bool                    `json:"has_more"`

@@ -37,12 +37,12 @@ type V1Persister interface {
 	AppendMessagesToThought(ctx context.Context, sessionId uuid.UUID, messageIds []uuid.UUID) error
 
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
-	GetMessages(ctx context.Context, sessionId uuid.UUID, opts ...GetMessagesOption) ([]v1.Message, error)
+	ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...ListMessagesOption) ([]v1.Message, error)
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 
 	CreateArtifact(ctx context.Context, a *v1.Artifact) error
 	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error
 	ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error)
-	ListFiles(ctx context.Context, artifactId uuid.UUID) ([]v1.File, error)
+	ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...ListFilesOption) ([]v1.File, error)
 	GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error)
 }
