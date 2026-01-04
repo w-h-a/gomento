@@ -22,7 +22,7 @@ import (
 	"github.com/w-h-a/gomento/internal/util"
 )
 
-func TestConnectToSpace_Success(t *testing.T) {
+func TestConnectToSpace_Session(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
