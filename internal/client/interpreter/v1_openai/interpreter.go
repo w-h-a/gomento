@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
@@ -15,9 +14,8 @@ import (
 )
 
 type v1OpenaiInterpreter struct {
-	options  interpreter.Options
-	llm      llms.Model
-	embedder embeddings.Embedder
+	options interpreter.Options
+	llm     llms.Model
 }
 
 func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message) (*v1.Skill, error) {
@@ -49,19 +47,6 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message)
 	if len(result.SOP) == 0 || len(result.Trigger) == 0 {
 		return nil, fmt.Errorf("llm returned incomplete data: %s", raw)
 	}
-
-	slog.InfoContext(ctx, "generating embedding", "trigger", result.Trigger)
-
-	vectors, err := d.embedder.EmbedDocuments(ctx, []string{result.Trigger})
-	if err != nil {
-		return nil, fmt.Errorf("embedding generation failed: %w", err)
-	}
-
-	if len(vectors) == 0 || len(vectors[0]) == 0 {
-		return nil, fmt.Errorf("embedding returned empty vector")
-	}
-
-	result.Embedding = vectors[0]
 
 	return &result, nil
 }
@@ -425,21 +410,12 @@ func NewV1Interpreter(opts ...interpreter.Option) interpreter.V1Interpreter {
 
 	llm, err := openai.New(llmOpts...)
 	if err != nil {
-		detail := "failed to initialize model for v1 openai distiller"
+		detail := "failed to initialize model for v1 openai interpreter"
 		slog.ErrorContext(context.Background(), detail, "error", err)
 		panic(detail)
 	}
 
 	d.llm = llm
-
-	emb, err := embeddings.NewEmbedder(llm)
-	if err != nil {
-		detail := "failed to initialize embedder for v1 openai distiller"
-		slog.ErrorContext(context.Background(), detail, "error", err)
-		panic(detail)
-	}
-
-	d.embedder = emb
 
 	return d
 }

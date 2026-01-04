@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
+	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -26,6 +27,7 @@ type V1Service struct {
 	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
 	filer      filer.V1Filer
+	embedder   embedder.Embedder
 	qname      string
 }
 
@@ -131,11 +133,24 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		finalParts = append(finalParts, domainPart)
 	}
 
+	fullText := ""
+	for _, part := range finalParts {
+		if part.Type == "text" {
+			fullText += part.Text + "\n"
+		}
+	}
+
+	vec, err := s.embedder.Embed(ctx, fullText)
+	if err != nil {
+		return nil, err
+	}
+
 	msg := &v1.Message{
 		Id:        uuid.New(),
 		SessionId: in.SessionId,
 		Role:      in.Role,
 		Parts:     finalParts,
+		Embedding: vec,
 	}
 
 	if err := s.persister.CreateMessageWithAssets(ctx, msg, assets); err != nil {
@@ -281,6 +296,7 @@ func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
 	f filer.V1Filer,
+	e embedder.Embedder,
 	qname string,
 ) *V1Service {
 	s := service.New()
@@ -289,6 +305,7 @@ func NewV1Service(
 		persister:  p,
 		dispatcher: d,
 		filer:      f,
+		embedder:   e,
 		qname:      qname,
 	}
 }

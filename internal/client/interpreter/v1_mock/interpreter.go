@@ -29,14 +29,10 @@ func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message) (
 		return d.skillRsp, nil
 	}
 
-	embedding := make([]float32, 1536)
-	embedding[0] = 0.01
-
 	return &v1.Skill{
-		Id:        uuid.New(),
-		Trigger:   "how to restart redis",
-		SOP:       "1. Check logs.\n2. Delete pod.",
-		Embedding: embedding,
+		Id:      uuid.New(),
+		Trigger: "how to restart redis",
+		SOP:     "1. Check logs.\n2. Delete pod.",
 	}, nil
 }
 

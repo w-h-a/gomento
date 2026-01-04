@@ -70,6 +70,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
 	d, _ := cmd.InitV1Dispatcher(ctx)
 	i, _ := cmd.InitV1Interpreter(ctx, "", "")
+	e, _ := cmd.InitEmbedder(ctx, "", "")
 	f, _ := cmd.InitV1Filer(
 		ctx,
 		MINIO_END,
@@ -81,9 +82,9 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	)
 
 	spaceSvc := v1space.NewV1Service(p)
-	sessSvc := v1session.NewV1Service(p, d, f, "worker")
+	sessSvc := v1session.NewV1Service(p, d, f, e, "worker")
 	fileSvc := v1file.NewV1Service(p, f)
-	workerSvc := v1worker.NewV1Service(p, d, i)
+	workerSvc := v1worker.NewV1Service(p, d, i, e)
 
 	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "worker") }()
 
