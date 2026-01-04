@@ -381,18 +381,6 @@ func (p *v1MockPersister) ListMessages(ctx context.Context, sessionId uuid.UUID,
 	return sessionMsgs, nil
 }
 
-func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Asset, len(p.assets))
-	for _, id := range ids {
-		if a, ok := p.assets[id]; ok {
-			cpy[id] = a
-		}
-	}
-	return cpy, nil
-}
-
 func (p *v1MockPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
@@ -489,6 +477,18 @@ func (p *v1MockPersister) GetFile(ctx context.Context, artifactId uuid.UUID, pat
 	}
 
 	return nil, nil
+}
+
+func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID]*v1.Asset, len(p.assets))
+	for _, id := range ids {
+		if a, ok := p.assets[id]; ok {
+			cpy[id] = a
+		}
+	}
+	return cpy, nil
 }
 
 func NewV1Persister(opts ...persister.Option) *v1MockPersister {

@@ -541,40 +541,6 @@ func (p *v1PGPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, o
 	return msgs, nil
 }
 
-func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
-	if len(ids) == 0 {
-		return map[uuid.UUID]*v1.Asset{}, nil
-	}
-
-	query := `SELECT id, container, path, mime, size_bytes FROM assets WHERE id = ANY($1)`
-
-	idStrings := make([]string, len(ids))
-	for i, id := range ids {
-		idStrings[i] = id.String()
-	}
-
-	rows, err := p.conn.QueryContext(ctx, query, fmt.Sprintf("{%s}", strings.Join(idStrings, ",")))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	result := make(map[uuid.UUID]*v1.Asset)
-	for rows.Next() {
-		var a v1.Asset
-		if err := rows.Scan(&a.Id, &a.Container, &a.Path, &a.MIME, &a.SizeBytes); err != nil {
-			return nil, err
-		}
-		result[a.Id] = &a
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return result, rows.Err()
-}
-
 func (p *v1PGPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
 	query := `INSERT INTO artifacts (id, project_id) VALUES ($1, $2) RETURNING created_at, updated_at;`
 	return p.conn.QueryRowContext(ctx, query, a.Id, a.ProjectId).Scan(&a.CreatedAt, &a.UpdatedAt)
@@ -723,6 +689,40 @@ func (p *v1PGPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path 
 	f.Asset = &a
 
 	return &f, nil
+}
+
+func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
+	if len(ids) == 0 {
+		return map[uuid.UUID]*v1.Asset{}, nil
+	}
+
+	query := `SELECT id, container, path, mime, size_bytes FROM assets WHERE id = ANY($1)`
+
+	stringIds := make([]string, len(ids))
+	for i, id := range ids {
+		stringIds[i] = id.String()
+	}
+
+	rows, err := p.conn.QueryContext(ctx, query, pq.Array(stringIds))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID]*v1.Asset)
+	for rows.Next() {
+		var a v1.Asset
+		if err := rows.Scan(&a.Id, &a.Container, &a.Path, &a.MIME, &a.SizeBytes); err != nil {
+			return nil, err
+		}
+		result[a.Id] = &a
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
 func NewV1Persister(opts ...persister.Option) persister.V1Persister {
