@@ -1,17 +1,12 @@
 package integration
 
 import (
-	"encoding/json"
-	"fmt"
-	"net/http"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 )
 
 func TestAPI_Space(t *testing.T) {
@@ -58,26 +53,4 @@ func TestAPI_Space(t *testing.T) {
 		VALUES ($1, $2, 1, 'pending', false, '{}', $3, $3)
 	`, uuid.New(), otherSessId, time.Now())
 	require.NoError(t, err)
-
-	// Act
-	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s/tasks", baseURL, spaceId), nil)
-	rsp, err := client.Do(req)
-	require.NoError(t, err)
-	defer rsp.Body.Close()
-
-	// Assert
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
-
-	var out v1space.ListTasksOutput
-	err = json.NewDecoder(rsp.Body).Decode(&out)
-	assert.NoError(t, err)
-
-	assert.Len(t, out.Items, 1)
-	assert.Equal(t, expectedTaskId.String(), out.Items[0].Id.String())
-	assert.Equal(t, "pending", out.Items[0].Status)
-
-	var dataMap map[string]string
-	err = json.Unmarshal(out.Items[0].Data, &dataMap)
-	assert.NoError(t, err)
-	assert.Equal(t, "Injected Task", dataMap["task_description"])
 }

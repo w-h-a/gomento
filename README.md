@@ -89,7 +89,7 @@ erDiagram
         UUID id PK
         UUID session_id FK
         INT task_order "Order of task execution within a session"
-        BOOLEAN is_thought "Whether or not this task is associated with thought messages or action messages"
+        BOOLEAN is_thought
         JSON data "Task-specific payload"
         VARCHAR status "pending|running|success|failed"
         TIMESTAMPTZ created_at
@@ -125,6 +125,7 @@ erDiagram
 
     FILES {
         UUID id PK
+        UUID space_id FK "Nullable"
         UUID asset_id FK
         TEXT path
         TEXT filename
@@ -135,6 +136,7 @@ erDiagram
     
     SPACES ||--o{ SKILLS : ""
     SPACES |o--o{ SESSIONS : ""
+    SPACES |o--o{ FILES: ""
     
     SESSIONS ||--o{ TASKS : ""
     TASKS |o--o{ MESSAGES : ""
