@@ -48,31 +48,24 @@ graph TD
     Worker -- "6. Trigger Interpretation" --> LLM
     Worker -- "7. Save Tasks/Skills" --> Postgres
 
-    %% Flow 3: Retrieval (Current Session History)
-    Agent -- "8. Get Tasks & Messages (w/ Assets)" --> API
-    API -- "9. Fetch History" --> Postgres
+    %% Flow 3: Retrieval (Within a Session)
+    Agent -- "8. Get Tasks & Messages Within Session" --> API
+    API -- "9. Fetch Session History" --> Postgres
     API -- "10. Presign URLs" --> MinIO
-    API -- "11. Return History" --> Agent
+    API -- "11. Return Session History" --> Agent
 
-    %% Flow 4: Retrieval (Skills)
-    Agent -- "12. Ask: 'How do I fix Redis?'" --> API
+    %% Flow 4: Retrieval (Across Sessions)
+    Agent -- "12. Get Skills & Messages Across Sessions" --> API
     API -- "13. Vector Search" --> Postgres
-    API -- "14. Return SOP" --> Agent
+    API -- "14. Return Relevant Skills/Messages" --> Agent
 ```
 
 ### ER Diagram
 
 ```mermaid
 erDiagram
-    PROJECTS {
-        UUID id PK
-        TEXT name
-        TIMESTAMPTZ created_at
-    }
-
     SPACES {
         UUID id PK
-        UUID project_id FK
         TEXT name
         TIMESTAMPTZ created_at
     }
@@ -88,7 +81,6 @@ erDiagram
 
     SESSIONS {
         UUID id PK
-        UUID project_id FK
         UUID space_id FK "Nullable"
         TIMESTAMPTZ created_at
     }
@@ -111,6 +103,7 @@ erDiagram
         UUID parent_id FK "Nullable, self-reference"
         VARCHAR role "'user' or 'assistant'"
         JSONB parts "Stores [{'type':'text'}, {'type':'image'}]"
+        VECTOR embedding "pgvector(1536)"
         TIMESTAMPTZ created_at
     }
 
@@ -130,16 +123,8 @@ erDiagram
         TIMESTAMPTZ created_at
     }
 
-    ARTIFACTS {
-        UUID id PK
-        UUID project_id FK
-        TIMESTAMPTZ created_at
-        TIMESTAMPTZ updated_at
-    }
-
     FILES {
         UUID id PK
-        UUID artifact_id FK
         UUID asset_id FK
         TEXT path
         TEXT filename
@@ -147,10 +132,6 @@ erDiagram
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
     }
-
-    PROJECTS ||--|{ SPACES : ""
-    PROJECTS ||--|{ SESSIONS : ""
-    PROJECTS ||--|{ ARTIFACTS : ""
     
     SPACES ||--o{ SKILLS : ""
     SPACES |o--o{ SESSIONS : ""
@@ -162,6 +143,5 @@ erDiagram
     MESSAGES ||--o{ MESSAGE_ASSETS : ""
     ASSETS ||--o{ MESSAGE_ASSETS : ""
 
-    ARTIFACTS ||--o{ FILES : ""
     ASSETS ||--o{ FILES : ""
 ```
