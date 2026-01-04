@@ -76,6 +76,7 @@ type Message struct {
 	ParentId  *uuid.UUID `json:"parent_id,omitempty"`
 	Role      string     `json:"role"`
 	Parts     []Part     `json:"parts"`
+	Embedding []float32  `json:"embedding"`
 	CreatedAt time.Time  `json:"created_at"`
 }
 

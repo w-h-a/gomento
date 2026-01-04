@@ -16,7 +16,7 @@ import (
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
 )
 
-func TestService_File_UploadGlobalFile(t *testing.T) {
+func TestUploadFile_Global(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -53,7 +53,7 @@ func TestService_File_UploadGlobalFile(t *testing.T) {
 	assert.Equal(t, file.Id, savedFiles[0].Id)
 }
 
-func TestService_File_UploadSpaceFile(t *testing.T) {
+func TestUploadFile_Space(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -87,7 +87,7 @@ func TestService_File_UploadSpaceFile(t *testing.T) {
 	assert.Equal(t, spaceId, *savedFiles[0].SpaceId)
 }
 
-func TestService_File_UploadUpserts(t *testing.T) {
+func TestUploadFile_Upserts(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -132,7 +132,7 @@ func TestService_File_UploadUpserts(t *testing.T) {
 	assert.Equal(t, file2.AssetId, savedFiles[0].AssetId, "Persistence should point to newest asset")
 }
 
-func TestService_ListFiles_FiltersByScope(t *testing.T) {
+func TestListFiles_FiltersByScope(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -173,7 +173,7 @@ func TestService_ListFiles_FiltersByScope(t *testing.T) {
 	assert.Equal(t, "local.txt", spaceOut.Items[0].Filename)
 }
 
-func TestService_ListFiles_FiltersByPath(t *testing.T) {
+func TestListFiles_FiltersByPath(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -210,7 +210,7 @@ func TestService_ListFiles_FiltersByPath(t *testing.T) {
 	assert.Equal(t, "src/services", out.Items[0].Path)
 }
 
-func TestService_GetFile_ById(t *testing.T) {
+func TestGetFile_ById(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -256,7 +256,7 @@ func TestService_GetFile_ById(t *testing.T) {
 	assert.Contains(t, url, "uploads/main.go")
 }
 
-func TestService_ConnectToSpace(t *testing.T) {
+func TestConnectToSpace_File(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -289,7 +289,7 @@ func TestService_ConnectToSpace(t *testing.T) {
 	assert.Equal(t, spaceId, *file.SpaceId)
 }
 
-func TestService_ConnectToSpace_FailsIfFileMissing(t *testing.T) {
+func TestConnectToSpace_FailsIfFileMissing(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -307,7 +307,7 @@ func TestService_ConnectToSpace_FailsIfFileMissing(t *testing.T) {
 	assert.ErrorIs(t, err, service.ErrFileNotFound)
 }
 
-func TestService_ConnectToSpace_FailsIfSpaceMissing(t *testing.T) {
+func TestConnectToSpace_FailsIfSpaceMissing(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
