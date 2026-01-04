@@ -8,7 +8,7 @@ Agents make the same mistakes repeatedly because their successes are buried in r
 
 ## Solution
 
-GoMento is a high-performance, single-binary sidecar written in **Go**. It accepts raw chat logs, uses a background worker to **distill** those logs into SOPs (Standard Operating Procedures), and makes them searchable for your agent next time.
+GoMento is a high-performance, single-binary sidecar written in **Go**. It accepts raw chat logs and files, uses a background worker to (a) **extract** a summary of the current session and (b) **distill** the current session into skills that are not session-bound, and makes all this memory easily searchable for your agent.
 
 ### Usage
 
