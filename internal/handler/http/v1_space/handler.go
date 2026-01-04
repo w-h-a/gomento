@@ -2,10 +2,13 @@ package v1space
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/mux"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
+	"github.com/w-h-a/gomento/internal/service"
 	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 	"github.com/w-h-a/gomento/internal/util"
 )
@@ -21,8 +24,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		ProjectId string `json:"project_id"`
-		Name      string `json:"name"`
+		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -30,19 +32,50 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pid, err := uuid.Parse(req.ProjectId)
-	if err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Project ID")
-		return
-	}
-
-	s, err := h.service.Create(ctx, pid, req.Name)
+	s, err := h.service.Create(ctx, req.Name)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	httphandler.WrtJSON(w, http.StatusCreated, s)
+}
+
+func (h *v1Handler) ListSpaces(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	out, err := h.service.ListSpaces(ctx)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, out)
+}
+
+func (h *v1Handler) GetSpace(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["space_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	space, err := h.service.GetSpace(ctx, id)
+	if err != nil {
+		if errors.Is(err, service.ErrSpaceNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "Space not found")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, space)
 }
 
 func NewV1Handler(s *v1space.V1Service) *v1Handler {

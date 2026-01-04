@@ -16,18 +16,16 @@ import (
 )
 
 type v1MockPersister struct {
-	options   persister.Options
-	jobs      map[uuid.UUID]*v1.Job
-	projects  map[uuid.UUID]*v1.Project
-	spaces    map[uuid.UUID]*v1.Space
-	skills    map[uuid.UUID]*v1.Skill
-	sessions  map[uuid.UUID]*v1.Session
-	tasks     map[uuid.UUID]*v1.Task
-	messages  map[uuid.UUID]*v1.Message
-	assets    map[uuid.UUID]*v1.Asset
-	artifacts map[uuid.UUID]*v1.Artifact
-	files     map[uuid.UUID]*v1.File
-	mtx       sync.RWMutex
+	options  persister.Options
+	jobs     map[uuid.UUID]*v1.Job
+	spaces   map[uuid.UUID]*v1.Space
+	skills   map[uuid.UUID]*v1.Skill
+	sessions map[uuid.UUID]*v1.Session
+	tasks    map[uuid.UUID]*v1.Task
+	messages map[uuid.UUID]*v1.Message
+	assets   map[uuid.UUID]*v1.Asset
+	files    map[uuid.UUID]*v1.File
+	mtx      sync.RWMutex
 }
 
 func (p *v1MockPersister) CreateJob(ctx context.Context, job *v1.Job) error {
@@ -80,28 +78,23 @@ func (p *v1MockPersister) Jobs() map[uuid.UUID]*v1.Job {
 	return cpy
 }
 
-func (p *v1MockPersister) CreateProject(ctx context.Context, proj *v1.Project) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	cpy := *proj
-	p.projects[proj.Id] = &cpy
-	return nil
-}
-
-func (p *v1MockPersister) Projects() map[uuid.UUID]*v1.Project {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	cpy := make(map[uuid.UUID]*v1.Project, len(p.projects))
-	maps.Copy(cpy, p.projects)
-	return cpy
-}
-
 func (p *v1MockPersister) CreateSpace(ctx context.Context, space *v1.Space) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	cpy := *space
 	p.spaces[space.Id] = &cpy
 	return nil
+}
+
+func (p *v1MockPersister) ListSpaces(ctx context.Context) ([]v1.Space, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	var spaces []v1.Space
+	for _, s := range p.spaces {
+		cpy := *s
+		spaces = append(spaces, cpy)
+	}
+	return spaces, nil
 }
 
 func (p *v1MockPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error) {
@@ -138,6 +131,24 @@ func (p *v1MockPersister) CreateSession(ctx context.Context, sess *v1.Session) e
 	return nil
 }
 
+func (p *v1MockPersister) ListSessions(ctx context.Context, spaceId *uuid.UUID) ([]v1.Session, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	var sessions []v1.Session
+	for _, s := range p.sessions {
+		if spaceId == nil {
+			cpy := *s
+			sessions = append(sessions, cpy)
+		} else if s.SpaceId != nil && *s.SpaceId == *spaceId {
+			cpy := *s
+			sessions = append(sessions, cpy)
+		}
+	}
+
+	return sessions, nil
+}
+
 func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
@@ -148,7 +159,7 @@ func (p *v1MockPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Ses
 	return nil, nil
 }
 
-func (p *v1MockPersister) UpdateSession(ctx context.Context, sess *v1.Session) error {
+func (p *v1MockPersister) UpdateSessionSpace(ctx context.Context, sess *v1.Session) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
 	if existing, ok := p.sessions[sess.Id]; ok {
@@ -381,16 +392,6 @@ func (p *v1MockPersister) ListMessages(ctx context.Context, sessionId uuid.UUID,
 	return sessionMsgs, nil
 }
 
-func (p *v1MockPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	a.CreatedAt = time.Now()
-	a.UpdatedAt = time.Now()
-	cpy := *a
-	p.artifacts[a.Id] = &cpy
-	return nil
-}
-
 func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *v1.Asset) error {
 	p.mtx.Lock()
 	defer p.mtx.Unlock()
@@ -402,7 +403,7 @@ func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a
 	f.AssetId = a.Id
 
 	for _, existing := range p.files {
-		if existing.ArtifactId == f.ArtifactId && existing.Path == f.Path && existing.Filename == f.Filename {
+		if existing.SpaceId == f.SpaceId && existing.Path == f.Path && existing.Filename == f.Filename {
 			existing.AssetId = f.AssetId
 			existing.UpdatedAt = time.Now()
 			*f = *existing
@@ -419,20 +420,7 @@ func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a
 	return nil
 }
 
-func (p *v1MockPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error) {
-	p.mtx.RLock()
-	defer p.mtx.RUnlock()
-	var arts []v1.Artifact
-	for _, a := range p.artifacts {
-		if a.ProjectId == projectId {
-			artifactCopy := *a
-			arts = append(arts, artifactCopy)
-		}
-	}
-	return arts, nil
-}
-
-func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
+func (p *v1MockPersister) ListFiles(ctx context.Context, spaceId *uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
@@ -440,7 +428,7 @@ func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, o
 
 	var files []v1.File
 	for _, f := range p.files {
-		if f.ArtifactId == artifactId {
+		if (f.SpaceId == nil && spaceId == nil) || (f.SpaceId != nil && spaceId != nil && *f.SpaceId == *spaceId) {
 			if len(options.PathPrefix) > 0 {
 				if !strings.HasPrefix(f.Path, options.PathPrefix) {
 					continue
@@ -461,22 +449,29 @@ func (p *v1MockPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, o
 	return files, nil
 }
 
-func (p *v1MockPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error) {
+func (p *v1MockPersister) GetFile(ctx context.Context, id uuid.UUID) (*v1.File, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 
-	for _, f := range p.files {
-		if f.ArtifactId == artifactId && f.Path == path && f.Filename == filename {
-			res := *f
-			if asset, ok := p.assets[f.AssetId]; ok {
-				assetRes := *asset
-				res.Asset = &assetRes
-			}
-			return &res, nil
+	if f, ok := p.files[id]; ok {
+		cpy := *f
+		if asset, ok := p.assets[f.AssetId]; ok {
+			assetRes := *asset
+			cpy.Asset = &assetRes
 		}
+		return &cpy, nil
 	}
 
 	return nil, nil
+}
+
+func (p *v1MockPersister) UpdateFileSpace(ctx context.Context, file *v1.File) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if existing, ok := p.files[file.Id]; ok {
+		existing.SpaceId = file.SpaceId
+	}
+	return nil
 }
 
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
@@ -495,18 +490,16 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 	options := persister.NewOptions(opts...)
 
 	p := &v1MockPersister{
-		options:   options,
-		jobs:      map[uuid.UUID]*v1.Job{},
-		projects:  map[uuid.UUID]*v1.Project{},
-		spaces:    map[uuid.UUID]*v1.Space{},
-		skills:    map[uuid.UUID]*v1.Skill{},
-		sessions:  map[uuid.UUID]*v1.Session{},
-		tasks:     map[uuid.UUID]*v1.Task{},
-		messages:  map[uuid.UUID]*v1.Message{},
-		assets:    map[uuid.UUID]*v1.Asset{},
-		artifacts: map[uuid.UUID]*v1.Artifact{},
-		files:     map[uuid.UUID]*v1.File{},
-		mtx:       sync.RWMutex{},
+		options:  options,
+		jobs:     map[uuid.UUID]*v1.Job{},
+		spaces:   map[uuid.UUID]*v1.Space{},
+		skills:   map[uuid.UUID]*v1.Skill{},
+		sessions: map[uuid.UUID]*v1.Session{},
+		tasks:    map[uuid.UUID]*v1.Task{},
+		messages: map[uuid.UUID]*v1.Message{},
+		assets:   map[uuid.UUID]*v1.Asset{},
+		files:    map[uuid.UUID]*v1.File{},
+		mtx:      sync.RWMutex{},
 	}
 
 	return p

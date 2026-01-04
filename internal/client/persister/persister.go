@@ -18,18 +18,16 @@ type V1Persister interface {
 	AcquireJobLock(ctx context.Context, jobId uuid.UUID) error
 	UpdateJobStatus(ctx context.Context, id uuid.UUID, status string) error
 
-	CreateProject(ctx context.Context, proj *v1.Project) error
-
 	CreateSpace(ctx context.Context, space *v1.Space) error
-	// TODO: List Spaces
+	ListSpaces(ctx context.Context) ([]v1.Space, error)
 	GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error)
 	SaveSkill(ctx context.Context, skill *v1.Skill) error
 	// TODO: Search Skills
 
 	CreateSession(ctx context.Context, sess *v1.Session) error
-	// TODO: List Sessions
+	ListSessions(ctx context.Context, spaceId *uuid.UUID) ([]v1.Session, error)
 	GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error)
-	UpdateSession(ctx context.Context, sess *v1.Session) error
+	UpdateSessionSpace(ctx context.Context, sess *v1.Session) error
 
 	FetchCurrentTasks(ctx context.Context, sessionId uuid.UUID, status *string) ([]v1.Task, error)
 	InsertTask(ctx context.Context, sessionId uuid.UUID, afterOrder int, data []byte, status string) (*v1.Task, error)
@@ -41,10 +39,10 @@ type V1Persister interface {
 	ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...ListMessagesOption) ([]v1.Message, error)
 	// TODO: Search Messages
 
-	CreateArtifact(ctx context.Context, a *v1.Artifact) error
 	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error
-	ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error)
-	ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...ListFilesOption) ([]v1.File, error)
-	GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error)
+	ListFiles(ctx context.Context, spaceId *uuid.UUID, opts ...ListFilesOption) ([]v1.File, error)
+	GetFile(ctx context.Context, id uuid.UUID) (*v1.File, error)
+	UpdateFileSpace(ctx context.Context, file *v1.File) error
+
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 }

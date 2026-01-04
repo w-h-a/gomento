@@ -1,4 +1,4 @@
-package v1artifact
+package v1file
 
 import (
 	"github.com/google/uuid"
@@ -6,7 +6,7 @@ import (
 )
 
 type ListFilesInput struct {
-	ArtifactId uuid.UUID
+	SpaceId    *uuid.UUID
 	PathPrefix string
 }
 

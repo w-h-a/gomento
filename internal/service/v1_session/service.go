@@ -29,11 +29,10 @@ type V1Service struct {
 	qname      string
 }
 
-func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId *uuid.UUID) (*v1.Session, error) {
+func (s *V1Service) Create(ctx context.Context, spaceId *uuid.UUID) (*v1.Session, error) {
 	p := &v1.Session{
-		Id:        uuid.New(),
-		ProjectId: projectId,
-		SpaceId:   spaceId,
+		Id:      uuid.New(),
+		SpaceId: spaceId,
 	}
 	if err := s.persister.CreateSession(ctx, p); err != nil {
 		return nil, err
@@ -41,12 +40,36 @@ func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID, spaceId *uu
 	return p, nil
 }
 
+func (s *V1Service) ListSessions(ctx context.Context, in ListSessionsInput) (*ListSessionsOutput, error) {
+	sessions, err := s.persister.ListSessions(
+		ctx,
+		in.SpaceId,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListSessionsOutput{
+		Items: sessions,
+	}, nil
+}
+
+func (s *V1Service) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
+	sess, err := s.persister.GetSession(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if sess == nil {
+		return nil, service.ErrSessionNotFound
+	}
+	return sess, nil
+}
+
 func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spaceId uuid.UUID) error {
 	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
 		return err
 	}
-
 	if sess == nil {
 		return service.ErrSessionNotFound
 	}
@@ -61,7 +84,7 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spa
 
 	sess.SpaceId = &spaceId
 
-	return s.persister.UpdateSession(ctx, sess)
+	return s.persister.UpdateSessionSpace(ctx, sess)
 }
 
 func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Message, error) {

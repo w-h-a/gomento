@@ -26,18 +26,11 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		ProjectId string  `json:"project_id"`
-		SpaceId   *string `json:"space_id"`
+		SpaceId *string `json:"space_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	pid, err := uuid.Parse(req.ProjectId)
-	if err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid UUIDs")
 		return
 	}
 
@@ -51,13 +44,62 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	s, err := h.service.Create(ctx, pid, sid)
+	s, err := h.service.Create(ctx, sid)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	httphandler.WrtJSON(w, http.StatusCreated, s)
+}
+
+func (h *v1Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	var sid *uuid.UUID
+	if s := r.URL.Query().Get("space_id"); s != "" {
+		id, err := uuid.Parse(s)
+		if err != nil {
+			httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+			return
+		}
+		sid = &id
+	}
+
+	out, err := h.service.ListSessions(ctx, v1session.ListSessionsInput{
+		SpaceId: sid,
+	})
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, out)
+}
+
+func (h *v1Handler) GetSession(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["session_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
+		return
+	}
+
+	sess, err := h.service.GetSession(ctx, id)
+	if err != nil {
+		if errors.Is(err, service.ErrSessionNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, sess)
 }
 
 func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {

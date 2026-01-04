@@ -1,10 +1,7 @@
-package v1artifact
+package v1file
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,17 +21,6 @@ type V1Service struct {
 	filer     filer.V1Filer
 }
 
-func (s *V1Service) Create(ctx context.Context, projectId uuid.UUID) (*v1.Artifact, error) {
-	a := &v1.Artifact{
-		Id:        uuid.New(),
-		ProjectId: projectId,
-	}
-	if err := s.persister.CreateArtifact(ctx, a); err != nil {
-		return nil, err
-	}
-	return a, nil
-}
-
 func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.File, error) {
 	asset, err := s.filer.UploadReader(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
 	if err != nil {
@@ -44,11 +30,11 @@ func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.Fil
 	asset.Id = uuid.New()
 
 	file := &v1.File{
-		Id:         uuid.New(),
-		ArtifactId: in.ArtifactId,
-		Path:       in.Path,
-		Filename:   in.Filename,
-		Meta:       []byte("{}"),
+		Id:       uuid.New(),
+		SpaceId:  in.SpaceId,
+		Path:     in.Path,
+		Filename: in.Filename,
+		Meta:     []byte("{}"),
 	}
 
 	if err := s.persister.UpsertFileWithAsset(ctx, file, asset); err != nil {
@@ -60,10 +46,32 @@ func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.Fil
 	return file, nil
 }
 
+func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceId uuid.UUID) error {
+	file, err := s.persister.GetFile(ctx, fileId)
+	if err != nil {
+		return err
+	}
+	if file == nil {
+		return service.ErrFileNotFound
+	}
+
+	space, err := s.persister.GetSpace(ctx, spaceId)
+	if err != nil {
+		return err
+	}
+	if space == nil {
+		return service.ErrSpaceNotFound
+	}
+
+	file.SpaceId = &spaceId
+
+	return s.persister.UpdateFileSpace(ctx, file)
+}
+
 func (s *V1Service) ListFiles(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {
 	fs, err := s.persister.ListFiles(
 		ctx,
-		in.ArtifactId,
+		in.SpaceId,
 		persister.WithPathPrefix(in.PathPrefix),
 	)
 	if err != nil {
@@ -75,26 +83,11 @@ func (s *V1Service) ListFiles(ctx context.Context, in ListFilesInput) (*ListFile
 	}, nil
 }
 
-func (s *V1Service) GetFile(ctx context.Context, artifactId uuid.UUID, logicPath string, withUrl bool) (*v1.File, string, error) {
-	dir, filename := filepath.Split(logicPath)
-
-	if filename == "" {
-		return nil, "", fmt.Errorf("invalid file path provided, path must not be a directory")
-	}
-
-	if dir != "/" {
-		dir = strings.TrimSuffix(dir, "/")
-	}
-
-	if dir == "" {
-		dir = "/"
-	}
-
-	file, err := s.persister.GetFile(ctx, artifactId, dir, filename)
+func (s *V1Service) GetFile(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.File, string, error) {
+	file, err := s.persister.GetFile(ctx, id)
 	if err != nil {
 		return nil, "", err
 	}
-
 	if file == nil {
 		return nil, "", service.ErrFileNotFound
 	}
