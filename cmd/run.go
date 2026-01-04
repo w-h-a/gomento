@@ -333,7 +333,6 @@ func InitV1Router(
 
 	spaceHandler := v1spacehttphandler.NewV1Handler(spac)
 	v1.Methods("POST").Path("/spaces").HandlerFunc(spaceHandler.Create)
-	v1.Methods("GET").Path("/spaces/{space_id}/tasks").HandlerFunc(spaceHandler.ListTasks)
 
 	sessionHandler := v1sessionhttphandler.NewV1Handler(sess)
 	v1.Methods("POST").Path("/sessions").HandlerFunc(sessionHandler.Create)

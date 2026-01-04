@@ -123,13 +123,32 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 }
 
 func (d *v1OpenaiInterpreter) distillSystemPrompt() string {
-	return `You are an expert at distilling Skills from Session data.
+	return `You are an expert at distilling reusable Skills from Session data.
+
+## Skills & Output
 A Skill consists of two parts:
-1. Trigger: A concise phrase describing WHEN this should happen.
-2. SOP: A detailed description of WHAT should happen (Standard Operating Procedure).
+1. Trigger: A concise phrase describing a problem whose resolution is required and described in the SOP.
+2. SOP: A detailed step-by-step resolution of WHAT should happen to solve the problem (Standard Operating Procedure).
 
 Output MUST be a valid JSON object with keys "trigger" and "sop".
-Example: {"trigger": "every morning at 9am", "sop": "check jira for high priority bugs"}`
+{"trigger": "Description of the situation that necessitates the skill (e.g., Database connection refused)", "sop": "The generalized, step-by-step guide to solving the problem"}
+
+## Input
+You will be given history of a user interacting with an Assistant.
+
+## Objectives
+1. Identify the core technical problem solved in the session.
+2. Ignore chit-chat.
+3. Ignore failures.
+4. Generalize specific values (example: change 'sudo systemctl restart postgres' to 'sudo systemctl restart <service_name>')
+5. Create a Trigger phrase that will be vector searched when a user faces this problem again.
+6. Create the SOP body, which is a step-by-step resolution
+
+## Critical Rules
+* If no practical technical knowledge was generated, do not make something up; just return empty JSON
+* SOP must be concise
+* The Trigger must be phrased as a problem statement.
+`
 }
 
 func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
@@ -182,17 +201,6 @@ func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
   - ## Current Messages: the most recent messages that you need to analyze [with message ids]
   - ## Files: any files attached by the user/agent during the session
 - Message with ID format: <message id=N> ... </message>, inside the tag is the message content, the id field indicates the message id.
-
-## Report Your Thinking
-Use extremely brief wording to report:
-1. Any new user requirement? What are the tasks?
-2. Given the session messages, do you need to update tasks or create tasks?
-3. Messages are related to which task?
-4. Are any messages related to mere thought instead of a proper task?
-5. Do task statuses need to be updated?
-6. Describe your actions.
-7. Confirm you will call every necessary tool in this response.
-8. Confirm you will call the finish tool once all other tools are called
 `
 }
 

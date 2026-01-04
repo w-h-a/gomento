@@ -102,50 +102,6 @@ func (p *v1PGPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, 
 	return &s, nil
 }
 
-func (p *v1PGPersister) ListTasksBySpace(ctx context.Context, spaceId uuid.UUID, statusFilter *string) ([]v1.Task, error) {
-	query := `
-		SELECT 
-			t.id, t.session_id, t.task_order, t.data, t.status, 
-			t.is_thought, t.created_at, t.updated_at
-		FROM tasks t
-		JOIN sessions s ON t.session_id = s.id
-		WHERE s.space_id = $1
-	`
-
-	args := []any{spaceId}
-
-	if statusFilter != nil {
-		query += " AND t.status = $2"
-		args = append(args, *statusFilter)
-	}
-
-	query += " ORDER BY t.created_at ASC"
-
-	rows, err := p.conn.QueryContext(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var tasks []v1.Task
-	for rows.Next() {
-		var t v1.Task
-		if err := rows.Scan(
-			&t.Id, &t.SessionId, &t.TaskOrder, &t.Data, &t.Status,
-			&t.IsThought, &t.CreatedAt, &t.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		tasks = append(tasks, t)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return tasks, nil
-}
-
 func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	query := `INSERT INTO skills (id, space_id, trigger, sop, embedding) VALUES ($1, $2, $3, $4, $5)`
 	_, err := p.conn.ExecContext(ctx, query, skill.Id, skill.SpaceId, skill.Trigger, skill.SOP, pgvector.NewVector(skill.Embedding))
