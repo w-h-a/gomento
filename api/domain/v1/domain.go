@@ -86,17 +86,6 @@ type Part struct {
 	Meta    map[string]any `json:"meta,omitempty"`
 }
 
-type Asset struct {
-	Id        uuid.UUID `json:"id"`
-	Container string    `json:"container"`
-	Path      string    `json:"path"`
-	ETag      string    `json:"etag"`
-	SHA256    string    `json:"sha256"`
-	MIME      string    `json:"mime"`
-	SizeBytes int64     `json:"size_bytes"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type File struct {
 	Id        uuid.UUID       `json:"id"`
 	SpaceId   *uuid.UUID      `json:"space_id"`
@@ -107,4 +96,15 @@ type File struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	Asset     *Asset          `json:"asset,omitempty"`
+}
+
+type Asset struct {
+	Id        uuid.UUID `json:"id"`
+	Container string    `json:"container"`
+	Path      string    `json:"path"`
+	ETag      string    `json:"etag"`
+	SHA256    string    `json:"sha256"`
+	MIME      string    `json:"mime"`
+	SizeBytes int64     `json:"size_bytes"`
+	CreatedAt time.Time `json:"created_at"`
 }
