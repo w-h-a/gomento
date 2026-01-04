@@ -35,7 +35,7 @@ func TestConnectToSpace_Success(t *testing.T) {
 	validSpaceId := uuid.New()
 	ctx := context.Background()
 
-	sess, err := s.Create(ctx, uuid.New(), nil)
+	sess, err := s.Create(ctx, nil)
 	require.NoError(t, err)
 
 	p.CreateSpace(ctx, &v1.Space{Id: validSpaceId, Name: "My Space"})
@@ -83,7 +83,7 @@ func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
 	randomSpaceId := uuid.New()
 	ctx := context.Background()
 
-	sess, err := s.Create(ctx, uuid.New(), nil)
+	sess, err := s.Create(ctx, nil)
 	require.NoError(t, err)
 
 	// Act
@@ -417,7 +417,7 @@ func TestCreateSession_SupportsNullableSpace(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	sess, err := s.Create(ctx, uuid.New(), nil)
+	sess, err := s.Create(ctx, nil)
 	require.NoError(t, err)
 
 	// Assert DB State

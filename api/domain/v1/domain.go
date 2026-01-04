@@ -30,15 +30,8 @@ type JobPayload struct {
 	SessionId uuid.UUID `json:"session_id"`
 }
 
-type Project struct {
-	Id        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type Space struct {
 	Id        uuid.UUID `json:"id"`
-	ProjectId uuid.UUID `json:"project_id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -54,7 +47,6 @@ type Skill struct {
 
 type Session struct {
 	Id        uuid.UUID  `json:"id"`
-	ProjectId uuid.UUID  `json:"project_id"`
 	SpaceId   *uuid.UUID `json:"space_id"`
 	CreatedAt time.Time  `json:"created_at"`
 }
@@ -105,21 +97,14 @@ type Asset struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type Artifact struct {
-	Id        uuid.UUID `json:"id"`
-	ProjectId uuid.UUID `json:"project_id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
 type File struct {
-	Id         uuid.UUID       `json:"id"`
-	ArtifactId uuid.UUID       `json:"artifact_id"`
-	AssetId    uuid.UUID       `json:"asset_id"`
-	Path       string          `json:"path"`
-	Filename   string          `json:"filename"`
-	Meta       json.RawMessage `json:"meta"`
-	CreatedAt  time.Time       `json:"created_at"`
-	UpdatedAt  time.Time       `json:"updated_at"`
-	Asset      *Asset          `json:"asset,omitempty"`
+	Id        uuid.UUID       `json:"id"`
+	SpaceId   *uuid.UUID      `json:"space_id"`
+	AssetId   uuid.UUID       `json:"asset_id"`
+	Path      string          `json:"path"`
+	Filename  string          `json:"filename"`
+	Meta      json.RawMessage `json:"meta"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+	Asset     *Asset          `json:"asset,omitempty"`
 }

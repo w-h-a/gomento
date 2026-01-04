@@ -77,21 +77,40 @@ func (p *v1PGPersister) UpdateJobStatus(ctx context.Context, jobId uuid.UUID, st
 	return err
 }
 
-func (p *v1PGPersister) CreateProject(ctx context.Context, proj *v1.Project) error {
-	query := `INSERT INTO projects (id, name) VALUES ($1, $2) RETURNING created_at;`
-	return p.conn.QueryRowContext(ctx, query, proj.Id, proj.Name).Scan(&proj.CreatedAt)
+func (p *v1PGPersister) CreateSpace(ctx context.Context, space *v1.Space) error {
+	query := `INSERT INTO spaces (id, name) VALUES ($1, $2) RETURNING created_at;`
+	return p.conn.QueryRowContext(ctx, query, space.Id, space.Name).Scan(&space.CreatedAt)
 }
 
-func (p *v1PGPersister) CreateSpace(ctx context.Context, space *v1.Space) error {
-	query := `INSERT INTO spaces (id, project_id, name) VALUES ($1, $2, $3) RETURNING created_at;`
-	return p.conn.QueryRowContext(ctx, query, space.Id, space.ProjectId, space.Name).Scan(&space.CreatedAt)
+func (p *v1PGPersister) ListSpaces(ctx context.Context) ([]v1.Space, error) {
+	query := `SELECT id, name, created_at FROM spaces ORDER BY created_at DESC`
+	rows, err := p.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var spaces []v1.Space
+	for rows.Next() {
+		var s v1.Space
+		if err := rows.Scan(&s.Id, &s.Name, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		spaces = append(spaces, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return spaces, nil
 }
 
 func (p *v1PGPersister) GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error) {
-	query := `SELECT id, project_id, name, created_at FROM spaces WHERE id = $1`
+	query := `SELECT id, name, created_at FROM spaces WHERE id = $1`
 	var s v1.Space
 
-	err := p.conn.QueryRowContext(ctx, query, id).Scan(&s.Id, &s.ProjectId, &s.Name, &s.CreatedAt)
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(&s.Id, &s.Name, &s.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -109,16 +128,55 @@ func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 }
 
 func (p *v1PGPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
-	query := `INSERT INTO sessions (id, project_id, space_id) VALUES ($1, $2, $3) RETURNING created_at;`
-	return p.conn.QueryRowContext(ctx, query, sess.Id, sess.ProjectId, sess.SpaceId).Scan(&sess.CreatedAt)
+	query := `INSERT INTO sessions (id, space_id) VALUES ($1, $2) RETURNING created_at;`
+	return p.conn.QueryRowContext(ctx, query, sess.Id, sess.SpaceId).Scan(&sess.CreatedAt)
+}
+
+func (p *v1PGPersister) ListSessions(ctx context.Context, spaceId *uuid.UUID) ([]v1.Session, error) {
+	query := `SELECT id, space_id, created_at FROM sessions`
+	var args []any
+
+	if spaceId != nil {
+		query += ` WHERE space_id = $1`
+		args = append(args, *spaceId)
+	}
+	query += ` ORDER BY created_at DESC`
+
+	rows, err := p.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []v1.Session
+	for rows.Next() {
+		var s v1.Session
+		var sId uuid.NullUUID
+
+		if err := rows.Scan(&s.Id, &sId, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+
+		if sId.Valid {
+			s.SpaceId = &sId.UUID
+		}
+
+		sessions = append(sessions, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return sessions, nil
 }
 
 func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
-	query := `SELECT id, project_id, space_id, created_at FROM sessions WHERE id = $1;`
+	query := `SELECT id, space_id, created_at FROM sessions WHERE id = $1;`
 	var sess v1.Session
 	var spaceId uuid.NullUUID
 
-	err := p.conn.QueryRowContext(ctx, query, id).Scan(&sess.Id, &sess.ProjectId, &spaceId, &sess.CreatedAt)
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(&sess.Id, &spaceId, &sess.CreatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
@@ -133,7 +191,7 @@ func (p *v1PGPersister) GetSession(ctx context.Context, id uuid.UUID) (*v1.Sessi
 	return &sess, nil
 }
 
-func (p *v1PGPersister) UpdateSession(ctx context.Context, sess *v1.Session) error {
+func (p *v1PGPersister) UpdateSessionSpace(ctx context.Context, sess *v1.Session) error {
 	query := `UPDATE sessions SET space_id = $1 WHERE id = $2`
 	_, err := p.conn.ExecContext(ctx, query, sess.SpaceId, sess.Id)
 	return err
@@ -541,11 +599,6 @@ func (p *v1PGPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, o
 	return msgs, nil
 }
 
-func (p *v1PGPersister) CreateArtifact(ctx context.Context, a *v1.Artifact) error {
-	query := `INSERT INTO artifacts (id, project_id) VALUES ($1, $2) RETURNING created_at, updated_at;`
-	return p.conn.QueryRowContext(ctx, query, a.Id, a.ProjectId).Scan(&a.CreatedAt, &a.UpdatedAt)
-}
-
 func (p *v1PGPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *v1.Asset) error {
 	tx, err := p.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -575,65 +628,59 @@ func (p *v1PGPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *
 	f.AssetId = a.Id
 
 	// upsert File Pointer
-	fileQuery := `
-		INSERT INTO files (id, artifact_id, asset_id, path, filename, meta)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		ON CONFLICT (artifact_id, path, filename) 
-		DO UPDATE SET 
-			asset_id = EXCLUDED.asset_id, 
-			meta = EXCLUDED.meta, 
-			updated_at = NOW()
-		RETURNING id, created_at, updated_at`
+	var query string
+	var args []any
 
-	if err := tx.QueryRowContext(ctx, fileQuery,
-		f.Id, f.ArtifactId, f.AssetId, f.Path, f.Filename, f.Meta,
-	).Scan(&f.Id, &f.CreatedAt, &f.UpdatedAt); err != nil {
+	if f.SpaceId == nil {
+		query = `
+			INSERT INTO files (id, space_id, asset_id, path, filename, meta)
+			VALUES ($1, NULL, $2, $3, $4, $5)
+			ON CONFLICT (path, filename) WHERE space_id IS NULL
+			DO UPDATE SET asset_id = EXCLUDED.asset_id, meta = EXCLUDED.meta, updated_at = NOW()
+			RETURNING id, created_at, updated_at`
+		args = []any{f.Id, f.AssetId, f.Path, f.Filename, f.Meta}
+	} else {
+		query = `
+			INSERT INTO files (id, space_id, asset_id, path, filename, meta)
+			VALUES ($1, $2, $3, $4, $5, $6)
+			ON CONFLICT (space_id, path, filename) WHERE space_id IS NOT NULL
+			DO UPDATE SET asset_id = EXCLUDED.asset_id, meta = EXCLUDED.meta, updated_at = NOW()
+			RETURNING id, created_at, updated_at`
+		args = []any{f.Id, f.SpaceId, f.AssetId, f.Path, f.Filename, f.Meta}
+	}
+
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&f.Id, &f.CreatedAt, &f.UpdatedAt); err != nil {
 		return err
 	}
 
 	return tx.Commit()
 }
 
-func (p *v1PGPersister) ListArtifacts(ctx context.Context, projectId uuid.UUID) ([]v1.Artifact, error) {
-	query := `SELECT id, project_id, created_at, updated_at FROM artifacts WHERE project_id = $1`
-
-	rows, err := p.conn.QueryContext(ctx, query, projectId)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var artifacts []v1.Artifact
-	for rows.Next() {
-		var a v1.Artifact
-		if err := rows.Scan(&a.Id, &a.ProjectId, &a.CreatedAt, &a.UpdatedAt); err != nil {
-			return nil, err
-		}
-		artifacts = append(artifacts, a)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return artifacts, nil
-}
-
-func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
+func (p *v1PGPersister) ListFiles(ctx context.Context, spaceId *uuid.UUID, opts ...persister.ListFilesOption) ([]v1.File, error) {
 	options := persister.NewListFilesOptions(opts...)
 
 	query := `
 		SELECT 
-			f.id, f.artifact_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+			f.id, f.space_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
 			a.id, a.container, a.path, a.mime, a.size_bytes
 		FROM files f
 		JOIN assets a ON f.asset_id = a.id
-		WHERE f.artifact_id = $1`
-	args := []any{artifactId}
+		WHERE 1=1`
+	args := []any{}
+	argIdx := 1
+
+	if spaceId != nil {
+		query += fmt.Sprintf(" AND f.space_id = $%d", argIdx)
+		args = append(args, *spaceId)
+		argIdx++
+	} else {
+		query += " AND f.space_id IS NULL"
+	}
 
 	if len(options.PathPrefix) > 0 {
-		query += " AND f.path LIKE $2"
+		query += fmt.Sprintf(" AND f.path LIKE $%d", argIdx)
 		args = append(args, options.PathPrefix+"%")
+		argIdx++
 	}
 
 	query += ` ORDER BY f.path ASC, f.filename ASC`
@@ -648,12 +695,19 @@ func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opt
 	for rows.Next() {
 		var f v1.File
 		f.Asset = &v1.Asset{}
+		var sId uuid.NullUUID
+
 		if err := rows.Scan(
-			&f.Id, &f.ArtifactId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
+			&f.Id, &sId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
 			&f.Asset.Id, &f.Asset.Container, &f.Asset.Path, &f.Asset.MIME, &f.Asset.SizeBytes,
 		); err != nil {
 			return nil, err
 		}
+
+		if sId.Valid {
+			f.SpaceId = &sId.UUID
+		}
+
 		files = append(files, f)
 	}
 
@@ -664,19 +718,20 @@ func (p *v1PGPersister) ListFiles(ctx context.Context, artifactId uuid.UUID, opt
 	return files, nil
 }
 
-func (p *v1PGPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path string, filename string) (*v1.File, error) {
+func (p *v1PGPersister) GetFile(ctx context.Context, id uuid.UUID) (*v1.File, error) {
 	query := `
-		SELECT f.id, f.artifact_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+		SELECT f.id, f.space_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
 		       a.id, a.container, a.path, a.mime, a.size_bytes
 		FROM files f
 		JOIN assets a ON f.asset_id = a.id
-		WHERE f.artifact_id = $1 AND f.path = $2 AND f.filename = $3`
+		WHERE f.id = $1`
 
 	var f v1.File
 	var a v1.Asset
+	var sId uuid.NullUUID
 
-	err := p.conn.QueryRowContext(ctx, query, artifactId, path, filename).Scan(
-		&f.Id, &f.ArtifactId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(
+		&f.Id, &sId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
 		&a.Id, &a.Container, &a.Path, &a.MIME, &a.SizeBytes,
 	)
 	if err != nil {
@@ -688,7 +743,17 @@ func (p *v1PGPersister) GetFile(ctx context.Context, artifactId uuid.UUID, path 
 
 	f.Asset = &a
 
+	if sId.Valid {
+		f.SpaceId = &sId.UUID
+	}
+
 	return &f, nil
+}
+
+func (p *v1PGPersister) UpdateFileSpace(ctx context.Context, file *v1.File) error {
+	query := `UPDATE files SET space_id = $1 WHERE id = $2`
+	_, err := p.conn.ExecContext(ctx, query, file.SpaceId, file.Id)
+	return err
 }
 
 func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {

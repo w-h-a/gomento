@@ -20,14 +20,12 @@ import (
 	v1openai "github.com/w-h-a/gomento/internal/client/interpreter/v1_openai"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	v1postgres "github.com/w-h-a/gomento/internal/client/persister/v1_postgres"
-	v1artifacthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_artifact"
-	v1projecthttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_project"
+	v1filehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_file"
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
-	v1artifactservice "github.com/w-h-a/gomento/internal/service/v1_artifact"
-	v1projectservice "github.com/w-h-a/gomento/internal/service/v1_project"
+	v1fileservice "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1spaceservice "github.com/w-h-a/gomento/internal/service/v1_space"
 	v1workerservice "github.com/w-h-a/gomento/internal/service/v1_worker"
@@ -78,10 +76,9 @@ func Run(c *cli.Context) error {
 		stopChannels["worker"] = make(chan struct{})
 	}
 
-	var projectService *v1projectservice.V1Service
 	var spaceService *v1spaceservice.V1Service
 	var sessionService *v1sessionservice.V1Service
-	var artifactService *v1artifactservice.V1Service
+	var fileService *v1fileservice.V1Service
 	var httpServer server.Server
 	if mode == "" || mode == "server" {
 		slog.InfoContext(ctx, "initiating http server")
@@ -104,8 +101,6 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
-		projectService = v1projectservice.NewV1Service(p)
-		stopChannels["project"] = make(chan struct{})
 		spaceService = v1spaceservice.NewV1Service(p)
 		stopChannels["space"] = make(chan struct{})
 		sessionService = v1sessionservice.NewV1Service(
@@ -115,19 +110,18 @@ func Run(c *cli.Context) error {
 			qname,
 		)
 		stopChannels["session"] = make(chan struct{})
-		artifactService = v1artifactservice.NewV1Service(
+		fileService = v1fileservice.NewV1Service(
 			p,
 			f,
 		)
-		stopChannels["artifact"] = make(chan struct{})
+		stopChannels["file"] = make(chan struct{})
 
 		httpServer, err = InitV1HttpServer(
 			ctx,
 			":4000",
-			projectService,
 			spaceService,
 			sessionService,
-			artifactService,
+			fileService,
 		)
 		stopChannels["httpserver"] = make(chan struct{})
 	}
@@ -158,17 +152,6 @@ func Run(c *cli.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			slog.InfoContext(ctx, "project service running")
-			errCh <- projectService.Run(
-				stopChannels["project"],
-				nil,
-				nil,
-			)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
 			slog.InfoContext(ctx, "space service running")
 			errCh <- spaceService.Run(
 				stopChannels["space"],
@@ -191,9 +174,9 @@ func Run(c *cli.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			slog.InfoContext(ctx, "artifact service running")
-			errCh <- artifactService.Run(
-				stopChannels["artifact"],
+			slog.InfoContext(ctx, "file service running")
+			errCh <- fileService.Run(
+				stopChannels["file"],
 				nil,
 				nil,
 			)
@@ -297,16 +280,15 @@ func InitV1Filer(
 func InitV1HttpServer(
 	ctx context.Context,
 	addr string,
-	proj *v1projectservice.V1Service,
 	spac *v1spaceservice.V1Service,
 	sess *v1sessionservice.V1Service,
-	art *v1artifactservice.V1Service,
+	file *v1fileservice.V1Service,
 ) (server.Server, error) {
 	srv := httpserver.NewServer(
 		server.WithAddress(addr),
 	)
 
-	v1, err := InitV1Router(ctx, proj, spac, sess, art)
+	v1, err := InitV1Router(ctx, spac, sess, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init router: %w", err)
 	}
@@ -320,28 +302,24 @@ func InitV1HttpServer(
 
 func InitV1Router(
 	ctx context.Context,
-	proj *v1projectservice.V1Service,
 	spac *v1spaceservice.V1Service,
 	sess *v1sessionservice.V1Service,
-	art *v1artifactservice.V1Service,
+	file *v1fileservice.V1Service,
 ) (*mux.Router, error) {
 	router := mux.NewRouter()
 	v1 := router.PathPrefix("/api/v1").Subrouter()
 
-	projectHandler := v1projecthttphandler.NewV1Handler(proj)
-	v1.Methods("POST").Path("/projects").HandlerFunc(projectHandler.Create)
-
 	spaceHandler := v1spacehttphandler.NewV1Handler(spac)
 	v1.Methods("POST").Path("/spaces").HandlerFunc(spaceHandler.Create)
-	// TODO: list spaces
-	// TODO: get space
+	v1.Methods("GET").Path("/spaces").HandlerFunc(spaceHandler.ListSpaces)
+	v1.Methods("GET").Path("/spaces/{space_id}").HandlerFunc(spaceHandler.GetSpace)
 	// TODO: search skills
 	// TODO: search messages
 
 	sessionHandler := v1sessionhttphandler.NewV1Handler(sess)
 	v1.Methods("POST").Path("/sessions").HandlerFunc(sessionHandler.Create)
-	// TODO: list sessions
-	// TODO: get session
+	v1.Methods("GET").Path("/sessions").HandlerFunc(sessionHandler.ListSessions)
+	v1.Methods("GET").Path("/sessions/{session_id}").HandlerFunc(sessionHandler.GetSession)
 	v1.Methods("POST").Path("/sessions/{session_id}/connect_to_space").HandlerFunc(sessionHandler.ConnectToSpace)
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.ListMessages)
@@ -349,11 +327,11 @@ func InitV1Router(
 	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.ListTasks)
 	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
 
-	artifactHandler := v1artifacthttphandler.NewV1Handler(art)
-	v1.Methods("POST").Path("/artifacts").HandlerFunc(artifactHandler.Create)
-	v1.Methods("POST").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.UploadFile)
-	v1.Methods("GET").Path("/artifacts/{artifact_id}/files").HandlerFunc(artifactHandler.ListFiles)
-	v1.Methods("GET").Path("/artifacts/{artifact_id}/file").HandlerFunc(artifactHandler.GetFile)
+	fileHandler := v1filehttphandler.NewV1Handler(file)
+	v1.Methods("POST").Path("/files").HandlerFunc(fileHandler.UploadFile)
+	v1.Methods("GET").Path("/files").HandlerFunc(fileHandler.ListFiles)
+	v1.Methods("GET").Path("/files/{file_id}").HandlerFunc(fileHandler.GetFile)
+	v1.Methods("POST").Path("/files/{file_id}/connect_to_space").HandlerFunc(fileHandler.ConnectToSpace)
 
 	return v1, nil
 }

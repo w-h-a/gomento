@@ -83,17 +83,18 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 
 	var files []v1.File
 
-	artifacts, err := s.persister.ListArtifacts(ctx, sess.ProjectId)
+	globalFiles, err := s.persister.ListFiles(ctx, nil)
 	if err != nil {
 		return err
 	}
+	files = append(files, globalFiles...)
 
-	for _, art := range artifacts {
-		fs, err := s.persister.ListFiles(ctx, art.Id)
+	if sess.SpaceId != nil {
+		spaceFiles, err := s.persister.ListFiles(ctx, sess.SpaceId)
 		if err != nil {
 			return err
 		}
-		files = append(files, fs...)
+		files = append(files, spaceFiles...)
 	}
 
 	for range maxIterations {

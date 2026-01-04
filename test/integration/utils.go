@@ -21,8 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/w-h-a/gomento/cmd"
-	v1artifact "github.com/w-h-a/gomento/internal/service/v1_artifact"
-	v1project "github.com/w-h-a/gomento/internal/service/v1_project"
+	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 	v1worker "github.com/w-h-a/gomento/internal/service/v1_worker"
@@ -43,7 +42,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 	db, err := sql.Open("postgres", DB_CONN)
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
-	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, projects, assets, files, artifacts CASCADE`)
+	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, assets, files CASCADE`)
 	require.NoError(t, err)
 
 	s3Config, _ := config.LoadDefaultConfig(ctx,
@@ -81,20 +80,18 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 		MINIO_PASS,
 	)
 
-	projSvc := v1project.NewV1Service(p)
 	spaceSvc := v1space.NewV1Service(p)
 	sessSvc := v1session.NewV1Service(p, d, f, "worker")
-	artSvc := v1artifact.NewV1Service(p, f)
+	fileSvc := v1file.NewV1Service(p, f)
 	workerSvc := v1worker.NewV1Service(p, d, i)
 
 	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "worker") }()
 
 	r, _ := cmd.InitV1Router(
 		ctx,
-		projSvc,
 		spaceSvc,
 		sessSvc,
-		artSvc,
+		fileSvc,
 	)
 
 	ts := httptest.NewServer(r)
