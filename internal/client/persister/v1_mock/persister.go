@@ -115,6 +115,30 @@ func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error 
 	return nil
 }
 
+func (p *v1MockPersister) SearchSkills(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.Skill, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	options := persister.NewSearchOptions(opts...)
+
+	var results []v1.Skill
+	for _, s := range p.skills {
+		if s.SpaceId == spaceId {
+			results = append(results, *s)
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Id.String() < results[j].Id.String()
+	})
+
+	if options.Limit > 0 && len(results) > options.Limit {
+		results = results[:options.Limit]
+	}
+
+	return results, nil
+}
+
 func (p *v1MockPersister) Skills() map[uuid.UUID]*v1.Skill {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
@@ -390,6 +414,32 @@ func (p *v1MockPersister) ListMessages(ctx context.Context, sessionId uuid.UUID,
 	}
 
 	return sessionMsgs, nil
+}
+
+func (p *v1MockPersister) SearchMessages(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.Message, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	options := persister.NewSearchOptions(opts...)
+
+	var results []v1.Message
+	for _, m := range p.messages {
+		if sess, ok := p.sessions[m.SessionId]; ok {
+			if sess.SpaceId != nil && *sess.SpaceId == spaceId {
+				results = append(results, *m)
+			}
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Id.String() < results[j].Id.String()
+	})
+
+	if options.Limit > 0 && len(results) > options.Limit {
+		results = results[:options.Limit]
+	}
+
+	return results, nil
 }
 
 func (p *v1MockPersister) UpsertFileWithAsset(ctx context.Context, f *v1.File, a *v1.Asset) error {

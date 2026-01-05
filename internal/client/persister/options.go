@@ -110,3 +110,23 @@ func NewListFilesOptions(opts ...ListFilesOption) ListFilesOptions {
 
 	return options
 }
+
+type SearchOption func(*SearchOptions)
+
+type SearchOptions struct {
+	Limit   int
+	Context context.Context
+}
+
+func NewSearchOptions(opts ...SearchOption) SearchOptions {
+	options := SearchOptions{
+		Limit:   5,
+		Context: context.Background(),
+	}
+
+	for _, fn := range opts {
+		fn(&options)
+	}
+
+	return options
+}

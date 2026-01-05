@@ -127,6 +127,38 @@ func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	return err
 }
 
+func (p *v1PGPersister) SearchSkills(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.Skill, error) {
+	options := persister.NewSearchOptions(opts...)
+
+	query := `
+		SELECT id, space_id, trigger, sop, created_at
+		FROM skills
+		WHERE space_id = $1
+		ORDER BY embedding <=> $2
+		LIMIT $3
+	`
+	rows, err := p.conn.QueryContext(ctx, query, spaceId, pgvector.NewVector(vec), options.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var skills []v1.Skill
+	for rows.Next() {
+		var s v1.Skill
+		if err := rows.Scan(&s.Id, &s.SpaceId, &s.Trigger, &s.SOP, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return skills, nil
+}
+
 func (p *v1PGPersister) CreateSession(ctx context.Context, sess *v1.Session) error {
 	query := `INSERT INTO sessions (id, space_id) VALUES ($1, $2) RETURNING created_at;`
 	return p.conn.QueryRowContext(ctx, query, sess.Id, sess.SpaceId).Scan(&sess.CreatedAt)
@@ -590,6 +622,43 @@ func (p *v1PGPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, o
 			return nil, fmt.Errorf("failed to unmarshal message parts: %w", err)
 		}
 
+		msgs = append(msgs, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return msgs, nil
+}
+
+func (p *v1PGPersister) SearchMessages(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.Message, error) {
+	options := persister.NewSearchOptions(opts...)
+
+	query := `
+		SELECT m.id, m.session_id, m.parent_id, m.role, m.parts, m.created_at
+		FROM messages m
+		JOIN sessions s ON m.session_id = s.id
+		WHERE s.space_id = $1
+		ORDER BY m.embedding <=> $2
+		LIMIT $3
+	`
+	rows, err := p.conn.QueryContext(ctx, query, spaceId, pgvector.NewVector(vec), options.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var msgs []v1.Message
+	for rows.Next() {
+		var m v1.Message
+		var partsBytes []byte
+		if err := rows.Scan(&m.Id, &m.SessionId, &m.ParentId, &m.Role, &partsBytes, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(partsBytes, &m.Parts); err != nil {
+			return nil, err
+		}
 		msgs = append(msgs, m)
 	}
 
