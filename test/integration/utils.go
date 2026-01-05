@@ -81,7 +81,7 @@ func setupIntegrationServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Cl
 		MINIO_PASS,
 	)
 
-	spaceSvc := v1space.NewV1Service(p)
+	spaceSvc := v1space.NewV1Service(p, e)
 	sessSvc := v1session.NewV1Service(p, d, f, e, "worker")
 	fileSvc := v1file.NewV1Service(p, f)
 	workerSvc := v1worker.NewV1Service(p, d, i, e)
