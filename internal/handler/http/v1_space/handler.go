@@ -78,6 +78,50 @@ func (h *v1Handler) GetSpace(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, space)
 }
 
+func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["space_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+
+	skills, err := h.service.SearchSkills(ctx, id, q)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, skills)
+}
+
+func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["space_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+
+	msgs, err := h.service.SearchMessages(ctx, id, q)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, msgs)
+}
+
 func NewV1Handler(s *v1space.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,
