@@ -118,6 +118,12 @@ type SearchOptions struct {
 	Context context.Context
 }
 
+func SearchWithLimit(limit int) SearchOption {
+	return func(so *SearchOptions) {
+		so.Limit = limit
+	}
+}
+
 func NewSearchOptions(opts ...SearchOption) SearchOptions {
 	options := SearchOptions{
 		Limit:   5,

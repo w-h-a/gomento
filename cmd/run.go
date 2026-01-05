@@ -123,7 +123,7 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
-		spaceService = v1spaceservice.NewV1Service(p)
+		spaceService = v1spaceservice.NewV1Service(p, e)
 		stopChannels["space"] = make(chan struct{})
 		sessionService = v1sessionservice.NewV1Service(
 			p,

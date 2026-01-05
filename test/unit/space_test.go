@@ -5,9 +5,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	v1mock "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
+	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	mockembedder "github.com/w-h-a/gomento/internal/client/embedder/mock"
+	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 )
 
@@ -18,8 +21,9 @@ func TestCreate_PersistsSpace(t *testing.T) {
 	}
 
 	// Arrange
-	p := v1mock.NewV1Persister()
-	s := v1space.NewV1Service(p)
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
 	ctx := context.Background()
 
 	// Act
@@ -34,4 +38,83 @@ func TestCreate_PersistsSpace(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, savedSpace)
 	assert.Equal(t, "DevOps Space", savedSpace.Name)
+}
+
+func TestSearchSkills_OrchestratesVectorSearch(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
+	ctx := context.Background()
+
+	// Setup Data
+	spaceId := uuid.New()
+	expectedTrigger := "how to fix nginx"
+
+	// Create a skill that should be found
+	err := p.SaveSkill(ctx, &v1.Skill{
+		Id:      uuid.New(),
+		SpaceId: spaceId,
+		Trigger: expectedTrigger,
+		SOP:     "restart it",
+	})
+	require.NoError(t, err)
+
+	// Create a noise skill in a different space
+	err = p.SaveSkill(ctx, &v1.Skill{
+		Id:      uuid.New(),
+		SpaceId: uuid.New(),
+		Trigger: "irrelevant",
+	})
+	require.NoError(t, err)
+
+	// Act
+	results, err := s.SearchSkills(ctx, spaceId, "nginx help")
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, results, 1)
+	assert.Equal(t, expectedTrigger, results[0].Trigger)
+	assert.Equal(t, "nginx help", e.Input())
+}
+
+func TestSearchMessages_OrchestratesVectorSearch(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
+	ctx := context.Background()
+
+	spaceId := uuid.New()
+
+	// Setup Session & Message in the Space
+	sess := &v1.Session{Id: uuid.New(), SpaceId: &spaceId}
+	require.NoError(t, p.CreateSession(ctx, sess))
+
+	msg := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sess.Id,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "relevant message"}},
+	}
+	require.NoError(t, p.CreateMessageWithAssets(ctx, msg, nil))
+
+	// Act
+	results, err := s.SearchMessages(ctx, spaceId, "find me")
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, results, 1)
+	assert.Equal(t, msg.Id, results[0].Id)
+	assert.Equal(t, "find me", e.Input())
 }
