@@ -15,7 +15,7 @@ func WithMiddleware(ms ...func(h http.Handler) http.Handler) server.Option {
 	}
 }
 
-func GetMiddlewareFrom(ctx context.Context) ([]func(h http.Handler) http.Handler, bool) {
+func MiddlewareFrom(ctx context.Context) ([]func(h http.Handler) http.Handler, bool) {
 	ms, ok := ctx.Value(middlewareKey{}).([]func(h http.Handler) http.Handler)
 	return ms, ok
 }

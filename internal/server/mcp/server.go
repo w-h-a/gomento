@@ -1,4 +1,4 @@
-package http
+package mcp
 
 import (
 	"context"
@@ -9,19 +9,21 @@ import (
 	"sync"
 	"time"
 
+	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/w-h-a/gomento/internal/server"
 )
 
-type httpServer struct {
-	options   server.Options
-	server    *http.Server
-	errCh     chan error
-	exit      chan struct{}
-	isRunning bool
-	mtx       sync.RWMutex
+type mcpServer struct {
+	options    server.Options
+	mcpServer  *mcpserver.MCPServer
+	httpServer *http.Server
+	errCh      chan error
+	exit       chan struct{}
+	isRunning  bool
+	mtx        sync.RWMutex
 }
 
-func (s *httpServer) Handle(handler any) error {
+func (s *mcpServer) Handle(handler any) error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
@@ -29,29 +31,37 @@ func (s *httpServer) Handle(handler any) error {
 		return errors.New("cannot set handler after server has started")
 	}
 
-	if s.server.Handler != nil {
-		return errors.New("handler already set")
-	}
-
-	h, ok := handler.(http.Handler)
-	if !ok {
-		return fmt.Errorf("invalid handler type: expected http.Handler, got %T", handler)
-	}
-
-	if ms, ok := MiddlewareFrom(s.options.Context); ok && len(ms) > 0 {
-		for i := len(ms) - 1; i >= 0; i-- {
-			if ms[i] != nil {
-				h = ms[i](h)
+	switch h := handler.(type) {
+	case mcpserver.ServerTool:
+		finalHandler := h.Handler
+		if ms, ok := ToolMiddlewareFrom(s.options.Context); ok && len(ms) > 0 {
+			for i := len(ms) - 1; i >= 0; i-- {
+				if ms[i] != nil {
+					finalHandler = ms[i](finalHandler)
+				}
 			}
 		}
+		h.Handler = finalHandler
+		s.mcpServer.AddTools(h)
+	case mcpserver.ServerResource:
+		finalHandler := h.Handler
+		if ms, ok := ResourceMiddlewareFrom(s.options.Context); ok && len(ms) > 0 {
+			for i := len(ms) - 1; i >= 0; i-- {
+				if ms[i] != nil {
+					finalHandler = ms[i](finalHandler)
+				}
+			}
+		}
+		h.Handler = finalHandler
+		s.mcpServer.AddResource(h.Resource, h.Handler)
+	default:
+		return fmt.Errorf("invalid handler type for MCP server: %T", handler)
 	}
-
-	s.server.Handler = h
 
 	return nil
 }
 
-func (s *httpServer) Run(stop chan struct{}) error {
+func (s *mcpServer) Run(stop chan struct{}) error {
 	s.mtx.RLock()
 	if s.isRunning {
 		s.mtx.RUnlock()
@@ -76,16 +86,12 @@ func (s *httpServer) Run(stop chan struct{}) error {
 	}
 }
 
-func (s *httpServer) Start() error {
+func (s *mcpServer) Start() error {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 
 	if s.isRunning {
 		return errors.New("server already started")
-	}
-
-	if s.server.Handler == nil {
-		return errors.New("handler not set")
 	}
 
 	listener, err := net.Listen("tcp", s.options.Address)
@@ -98,9 +104,15 @@ func (s *httpServer) Start() error {
 	s.exit = make(chan struct{})
 	s.errCh = make(chan error, 1)
 
+	mux := http.NewServeMux()
+	streamHandler := mcpserver.NewStreamableHTTPServer(s.mcpServer)
+	mux.Handle("/mcp", streamHandler)
+
+	s.httpServer = &http.Server{Handler: mux}
+
 	go func() {
-		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.errCh <- fmt.Errorf("http server ListenAndServe error: %w", err)
+		if err := s.httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			s.errCh <- fmt.Errorf("mcp sse error: %w", err)
 		}
 		close(s.exit)
 	}()
@@ -110,13 +122,13 @@ func (s *httpServer) Start() error {
 	return nil
 }
 
-func (s *httpServer) Stop() error {
+func (s *mcpServer) Stop() error {
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stopCancel()
 	return s.stop(stopCtx)
 }
 
-func (s *httpServer) stop(ctx context.Context) error {
+func (s *mcpServer) stop(ctx context.Context) error {
 	s.mtx.Lock()
 
 	if !s.isRunning {
@@ -125,12 +137,12 @@ func (s *httpServer) stop(ctx context.Context) error {
 	}
 
 	s.isRunning = false
-	srv := s.server
+	httpServer := s.httpServer
 	exit := s.exit
 
 	s.mtx.Unlock()
 
-	shutdownErr := srv.Shutdown(ctx)
+	shutdownErr := httpServer.Shutdown(ctx)
 
 	var stopErr error
 
@@ -155,10 +167,12 @@ func (s *httpServer) stop(ctx context.Context) error {
 func NewServer(opts ...server.Option) server.Server {
 	options := server.NewOptions(opts...)
 
-	s := &httpServer{
-		options: options,
-		server:  &http.Server{},
-		mtx:     sync.RWMutex{},
+	// TODO: validate options
+
+	s := &mcpServer{
+		options:   options,
+		mcpServer: mcpserver.NewMCPServer(options.Name, options.Version),
+		mtx:       sync.RWMutex{},
 	}
 
 	return s
