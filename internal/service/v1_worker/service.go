@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
+	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -20,6 +21,7 @@ type V1Service struct {
 	dispatcher  dispatcher.V1Dispatcher
 	persister   persister.V1Persister
 	interpreter interpreter.V1Interpreter
+	embedder    embedder.Embedder
 }
 
 func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Job) error, qname string) error {
@@ -292,6 +294,14 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
 
 	skill.SpaceId = *sess.SpaceId
 
+	vec, err := s.embedder.Embed(ctx, skill.Trigger)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to embed skill trigger", "error", err)
+		return err
+	}
+
+	skill.Embedding = vec
+
 	slog.InfoContext(ctx, "saving skill", "trigger", skill.Trigger)
 
 	return s.persister.SaveSkill(ctx, skill)
@@ -301,6 +311,7 @@ func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
 	i interpreter.V1Interpreter,
+	e embedder.Embedder,
 ) *V1Service {
 	s := service.New()
 	return &V1Service{
@@ -308,5 +319,6 @@ func NewV1Service(
 		persister:   p,
 		dispatcher:  d,
 		interpreter: i,
+		embedder:    e,
 	}
 }

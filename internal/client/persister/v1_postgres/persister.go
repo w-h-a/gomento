@@ -511,8 +511,8 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	query := `WITH last_message AS (
 		SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1
 	)
-	INSERT INTO messages (id, session_id, parent_id, role, parts)
-	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4)
+	INSERT INTO messages (id, session_id, parent_id, role, parts, embedding)
+	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4, $5)
 	RETURNING parent_id, created_at;`
 
 	if err := tx.QueryRowContext(
@@ -522,6 +522,7 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 		msg.Id,
 		msg.Role,
 		partsJson,
+		pgvector.NewVector(msg.Embedding),
 	).Scan(&msg.ParentId, &msg.CreatedAt); err != nil {
 		return err
 	}

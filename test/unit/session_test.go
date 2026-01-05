@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
+	mockembedder "github.com/w-h-a/gomento/internal/client/embedder/mock"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/persister"
@@ -30,7 +31,7 @@ func TestConnectToSpace_Session(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), mockembedder.NewEmbedder(), "q")
 
 	validSpaceId := uuid.New()
 	ctx := context.Background()
@@ -59,7 +60,7 @@ func TestConnectToSpace_FailsForMissingSession(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), mockembedder.NewEmbedder(), "q")
 
 	ctx := context.Background()
 
@@ -78,7 +79,7 @@ func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q")
+	s := v1session.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), mockembedder.NewEmbedder(), "q")
 
 	randomSpaceId := uuid.New()
 	ctx := context.Background()
@@ -108,7 +109,8 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	e := mockembedder.NewEmbedder()
+	s := v1session.NewV1Service(p, d, f, e, "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -136,6 +138,11 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Len(t, msg.Parts, 2)
 	assert.Nil(t, msg.Parts[0].AssetId)
 	assert.NotNil(t, msg.Parts[1].AssetId)
+	assert.NotNil(t, msg.Embedding)
+
+	// Assert: Embedder
+	expectedText := "Hello World\n"
+	assert.Equal(t, expectedText, e.Input())
 
 	// Assert: Filer
 	uploads := f.Uploads()
@@ -170,7 +177,7 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -226,7 +233,7 @@ func TestGetMessages_PaginationLogic(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -266,7 +273,7 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -314,7 +321,7 @@ func TestGetMessages_ReturnsDescendingOrder(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, d, f, "q")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "q")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -358,7 +365,7 @@ func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 
 	ctx := context.Background()
 
@@ -385,7 +392,7 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 
 	ctx := context.Background()
 
@@ -412,7 +419,7 @@ func TestCreateSession_SupportsNullableSpace(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, d, f, "q")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "q")
 
 	ctx := context.Background()
 
@@ -437,7 +444,7 @@ func TestFinishSession_Publishes(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, d, f, "worker-queue")
+	s := v1session.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "worker-queue")
 	sessionId := uuid.New()
 	ctx := context.Background()
 

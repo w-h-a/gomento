@@ -13,6 +13,9 @@ import (
 	"github.com/urfave/cli/v2"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
+	"github.com/w-h-a/gomento/internal/client/embedder"
+	"github.com/w-h-a/gomento/internal/client/embedder/mock"
+	"github.com/w-h-a/gomento/internal/client/embedder/openai"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	v1s3 "github.com/w-h-a/gomento/internal/client/filer/v1_s3"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
@@ -43,6 +46,8 @@ func Run(c *cli.Context) error {
 		qname = "worker"
 	}
 
+	apiKey := c.String("api_key")
+
 	disp, err := InitV1Dispatcher(ctx)
 	if err != nil {
 		return err
@@ -57,8 +62,6 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
-		apiKey := c.String("api_key")
-
 		i, err := InitV1Interpreter(
 			ctx,
 			apiKey,
@@ -68,10 +71,20 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
+		e, err := InitEmbedder(
+			ctx,
+			apiKey,
+			"text-embedding-3-small",
+		)
+		if err != nil {
+			return err
+		}
+
 		workerService = v1workerservice.NewV1Service(
 			p,
 			disp,
 			i,
+			e,
 		)
 		stopChannels["worker"] = make(chan struct{})
 	}
@@ -101,12 +114,22 @@ func Run(c *cli.Context) error {
 			return err
 		}
 
+		e, err := InitEmbedder(
+			ctx,
+			apiKey,
+			"text-embedding-3-small",
+		)
+		if err != nil {
+			return err
+		}
+
 		spaceService = v1spaceservice.NewV1Service(p)
 		stopChannels["space"] = make(chan struct{})
 		sessionService = v1sessionservice.NewV1Service(
 			p,
 			disp,
 			f,
+			e,
 			qname,
 		)
 		stopChannels["session"] = make(chan struct{})
@@ -254,6 +277,22 @@ func InitV1Interpreter(
 			},
 		),
 	), nil
+}
+
+// TODO: accept user configuration
+func InitEmbedder(
+	ctx context.Context,
+	apiKey string,
+	model string,
+) (embedder.Embedder, error) {
+	if len(apiKey) > 0 {
+		return openai.NewEmbedder(
+			embedder.WithApiKey(apiKey),
+			embedder.WithModel(model),
+		), nil
+	}
+
+	return mock.NewEmbedder(), nil
 }
 
 // TODO: accept user configuration

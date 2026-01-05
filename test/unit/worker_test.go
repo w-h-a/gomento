@@ -3,6 +3,7 @@ package unit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
+	mockembedder "github.com/w-h-a/gomento/internal/client/embedder/mock"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 	v1mockinterpreter "github.com/w-h-a/gomento/internal/client/interpreter/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
@@ -28,7 +30,8 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	ctx := context.Background()
 
@@ -77,7 +80,8 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	ctx := context.Background()
 	spaceId := uuid.New()
@@ -138,7 +142,8 @@ func TestProcessJob_Checkpoint_UpdatesTasksOnly(t *testing.T) {
 			[]interpreter.TaskAction{insertAction},
 		),
 	)
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -181,7 +186,8 @@ func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
 			{Type: interpreter.TaskActionFinish},
 		}),
 	)
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	spaceId := uuid.New()
 	sessionId := uuid.New()
@@ -227,7 +233,8 @@ func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 			Embedding: make([]float32, 1536),
 		}),
 	)
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	spaceId := uuid.New()
 	sessionId := uuid.New()
@@ -264,6 +271,47 @@ func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 
 	assert.Equal(t, expectedTrigger, savedSkill.Trigger)
 	assert.Equal(t, spaceId, savedSkill.SpaceId, "Skill must be linked to the session's space")
+
+	assert.NotEmpty(t, savedSkill.Embedding)
+	assert.Equal(t, expectedTrigger, e.Input())
+}
+
+func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithSkillRsp(&v1.Skill{
+			Id: uuid.New(), Trigger: "trigger", SOP: "sop",
+		}),
+	)
+	e := mockembedder.NewEmbedder(mockembedder.WithError(errors.New("openai down")))
+
+	s := v1worker.NewV1Service(p, d, i, e)
+
+	ctx := context.Background()
+
+	spaceId := uuid.New()
+	sessionId := uuid.New()
+
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+
+	// Assert
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "openai down")
+	assert.Len(t, p.Skills(), 0)
 }
 
 func TestProcessJob_ProcessingOrder(t *testing.T) {
@@ -283,8 +331,8 @@ func TestProcessJob_ProcessingOrder(t *testing.T) {
 			Embedding: []float32{0.1},
 		}),
 	)
-
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	sessionId := uuid.New()
 	spaceId := uuid.New()
@@ -339,7 +387,8 @@ func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
-	s := v1worker.NewV1Service(p, d, i)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -377,7 +426,7 @@ func TestProcessJob_EnforcesJobLock(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter())
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
 
 	job := &v1.Job{
 		Id:     uuid.New(),
@@ -403,7 +452,7 @@ func TestProcessJob_IgnoresUnknownTaskTypes(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter())
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
 
 	job := &v1.Job{
 		Id:     uuid.New(),
