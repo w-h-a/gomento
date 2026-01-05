@@ -22,7 +22,7 @@ type V1Persister interface {
 	ListSpaces(ctx context.Context) ([]v1.Space, error)
 	GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error)
 	SaveSkill(ctx context.Context, skill *v1.Skill) error
-	// TODO: Search Skills
+	SearchSkills(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.Skill, error)
 
 	CreateSession(ctx context.Context, sess *v1.Session) error
 	ListSessions(ctx context.Context, spaceId *uuid.UUID) ([]v1.Session, error)
@@ -37,7 +37,7 @@ type V1Persister interface {
 
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
 	ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...ListMessagesOption) ([]v1.Message, error)
-	// TODO: Search Messages
+	SearchMessages(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.Message, error)
 
 	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error
 	ListFiles(ctx context.Context, spaceId *uuid.UUID, opts ...ListFilesOption) ([]v1.File, error)
