@@ -352,8 +352,8 @@ func InitV1Router(
 	v1.Methods("POST").Path("/spaces").HandlerFunc(spaceHandler.Create)
 	v1.Methods("GET").Path("/spaces").HandlerFunc(spaceHandler.ListSpaces)
 	v1.Methods("GET").Path("/spaces/{space_id}").HandlerFunc(spaceHandler.GetSpace)
-	// TODO: search skills
-	// TODO: search messages
+	v1.Methods("GET").Path("/spaces/{space_id}/skills").HandlerFunc(spaceHandler.SearchSkills)
+	v1.Methods("GET").Path("/spaces/{space_id}/messages").HandlerFunc(spaceHandler.SearchMessages)
 
 	sessionHandler := v1sessionhttphandler.NewV1Handler(sess)
 	v1.Methods("POST").Path("/sessions").HandlerFunc(sessionHandler.Create)
