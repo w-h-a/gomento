@@ -2,6 +2,7 @@ package v1file
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
@@ -179,7 +180,7 @@ func (h *v1Handler) getFile(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 
 	file, url, err := h.service.GetFile(ctx, id, withUrl)
 	if err != nil {
-		if err == service.ErrFileNotFound {
+		if errors.Is(err, service.ErrFileNotFound) {
 			return mcp.NewToolResultError("file not found"), nil
 		}
 		return mcp.NewToolResultError(err.Error()), nil
@@ -243,10 +244,10 @@ func (h *v1Handler) connectToSpace(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	if err := h.service.ConnectToSpace(ctx, fileId, spaceId); err != nil {
-		if err == service.ErrFileNotFound {
+		if errors.Is(err, service.ErrFileNotFound) {
 			return mcp.NewToolResultError("file not found"), nil
 		}
-		if err == service.ErrSpaceNotFound {
+		if errors.Is(err, service.ErrSpaceNotFound) {
 			return mcp.NewToolResultError("space not found"), nil
 		}
 		return mcp.NewToolResultError(err.Error()), nil

@@ -58,7 +58,7 @@ func (h *v1Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	ctx := util.WithTraceId(r.Context(), traceId)
 
 	var sid *uuid.UUID
-	if s := r.URL.Query().Get("space_id"); s != "" {
+	if s := r.URL.Query().Get("space_id"); len(s) > 0 {
 		id, err := uuid.Parse(s)
 		if err != nil {
 			httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
