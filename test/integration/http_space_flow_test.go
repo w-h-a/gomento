@@ -14,13 +14,13 @@ import (
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 )
 
-func TestAPI_Space_Flow(t *testing.T) {
+func TestAPI_Http_Space_Flow(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) == 0 {
 		t.Log("SKIPPING INTEGRATION TEST")
 		return
 	}
 
-	client, baseURL, db, _ := setupIntegrationServer(t)
+	client, baseURL, db, _ := setupHttpServer(t)
 
 	// ==========================================
 	// Scenario 1: Create Space & Session

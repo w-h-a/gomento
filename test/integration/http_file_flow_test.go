@@ -17,18 +17,18 @@ import (
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
 )
 
-func TestAPI_File_Flow(t *testing.T) {
+func TestAPI_Http_File_Flow(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) == 0 {
 		t.Log("SKIPPING INTEGRATION TEST")
 		return
 	}
 
-	client, baseURL, db, s3Client := setupIntegrationServer(t)
+	client, baseURL, db, s3Client := setupHttpServer(t)
 
 	// ==========================================
 	// Scenario 1: Global File Lifecycle
 	// ==========================================
-	t.Log("Step 1: Uploading a Global File")
+	t.Log("Step 1: Uploading a Global File via HTTP")
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -70,7 +70,7 @@ func TestAPI_File_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 2: Space File Lifecycle & Isolation
 	// ==========================================
-	t.Log("Step 2: Uploading a Space-Scoped File")
+	t.Log("Step 2: Uploading a Space-Scoped File via HTTP")
 
 	// Create Space
 	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "DevOps Space"})
@@ -97,10 +97,14 @@ func TestAPI_File_Flow(t *testing.T) {
 	assert.Equal(t, spaceId, spaceFile["space_id"])
 	assert.NotEqual(t, globalId, spaceFile["id"], "Space file should have distinct ID from global file")
 
+	err = db.QueryRow("SELECT count(*) FROM files WHERE id = $1 AND space_id = $2", spaceFile["id"], spaceId).Scan(&count)
+	assert.NoError(t, err)
+	assert.Equal(t, 1, count, "Space file must exist in DB and be linked to space")
+
 	// ==========================================
 	// Scenario 3: Listing & Filtering
 	// ==========================================
-	t.Log("Step 3: Verifying List Isolation")
+	t.Log("Step 3: Verifying List Isolation via HTTP")
 
 	// List Global Only
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files", baseURL), nil)
@@ -127,7 +131,7 @@ func TestAPI_File_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 4: Get By ID & Presigned URL
 	// ==========================================
-	t.Log("Step 4: Fetching File with Presigned URL")
+	t.Log("Step 4: Fetching File with Presigned URL via HTTP")
 
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files/%s?with_url=true", baseURL, globalId), nil)
 	rsp, err = client.Do(req)
@@ -145,7 +149,7 @@ func TestAPI_File_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 5: Ad-Hoc Connection (Moving Global to Space)
 	// ==========================================
-	t.Log("Step 5: Connecting Global File to Space")
+	t.Log("Step 5: Connecting Global File to Space via HTTP")
 
 	// 1. Upload new orphan
 	body = &bytes.Buffer{}
@@ -199,7 +203,7 @@ func TestAPI_File_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 6: Filter by Path Prefix
 	// ==========================================
-	t.Log("Step 6: Filtering Files by Path")
+	t.Log("Step 6: Filtering Files by Path via HTTP")
 
 	// 1. Upload file to a specific directory in the space
 	body = &bytes.Buffer{}

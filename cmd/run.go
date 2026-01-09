@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/gorilla/mux"
+	mcp "github.com/mark3labs/mcp-go/server"
 	"github.com/urfave/cli/v2"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
@@ -26,8 +27,10 @@ import (
 	v1filehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_file"
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
+	v1filemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_file"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
+	mcpserver "github.com/w-h-a/gomento/internal/server/mcp"
 	v1fileservice "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1spaceservice "github.com/w-h-a/gomento/internal/service/v1_space"
@@ -316,6 +319,52 @@ func InitV1Filer(
 }
 
 // TODO: accept user configuration
+func InitV1McpServer(
+	ctx context.Context,
+	addr string,
+	name string,
+	version string,
+	spac *v1spaceservice.V1Service,
+	sess *v1sessionservice.V1Service,
+	file *v1fileservice.V1Service,
+) (server.Server, error) {
+	srv := mcpserver.NewServer(
+		server.WithAddress(addr),
+		server.WithName(name),
+		server.WithVersion(version),
+	)
+
+	if err := RegisterV1McpHandlers(ctx, srv, spac, sess, file); err != nil {
+		return nil, fmt.Errorf("failed to init mcp router: %w", err)
+	}
+
+	return srv, nil
+}
+
+func RegisterV1McpHandlers(
+	ctx context.Context,
+	registrar mcpserver.Registrar,
+	spac *v1spaceservice.V1Service,
+	sess *v1sessionservice.V1Service,
+	file *v1fileservice.V1Service,
+) error {
+	fileHandler := v1filemcphandler.NewV1Handler(file)
+	tools := []mcp.ServerTool{
+		fileHandler.UploadFileTool(),
+		fileHandler.ListFilesTool(),
+		fileHandler.GetFileTool(),
+		fileHandler.ConnectToSpaceTool(),
+	}
+	for _, t := range tools {
+		if err := registrar.Handle(t); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// TODO: accept user configuration
 func InitV1HttpServer(
 	ctx context.Context,
 	addr string,
@@ -327,7 +376,7 @@ func InitV1HttpServer(
 		server.WithAddress(addr),
 	)
 
-	v1, err := InitV1Router(ctx, spac, sess, file)
+	v1, err := RegisterV1HttpHandlers(ctx, spac, sess, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init router: %w", err)
 	}
@@ -339,7 +388,7 @@ func InitV1HttpServer(
 	return srv, nil
 }
 
-func InitV1Router(
+func RegisterV1HttpHandlers(
 	ctx context.Context,
 	spac *v1spaceservice.V1Service,
 	sess *v1sessionservice.V1Service,
