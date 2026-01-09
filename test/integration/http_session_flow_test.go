@@ -98,7 +98,7 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 3: Ad-Hoc Space Connection
 	// ==========================================
-	t.Log("Step 3: Connecting to Space")
+	t.Log("Step 3: Connecting to Space via HTTP")
 
 	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "DevOps Space"})
 	spaceId := spaceRsp["id"].(string)
@@ -120,7 +120,7 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 4: Worker Checkpoint (Extract Tasks)
 	// ==========================================
-	t.Log("Step 4: Triggering Checkpoint")
+	t.Log("Step 4: Triggering Checkpoint via HTTP")
 
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/checkpoint", baseURL, sessionId), nil)
 	rsp, err = client.Do(req)
@@ -152,7 +152,7 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 5: Worker Finish (Distill Skill)
 	// ==========================================
-	t.Log("Step 5: Triggering Distillation")
+	t.Log("Step 5: Triggering Distillation via HTTP")
 
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
 	rsp, err = client.Do(req)

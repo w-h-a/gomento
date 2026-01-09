@@ -349,13 +349,14 @@ func RegisterV1McpHandlers(
 	sess *v1sessionservice.V1Service,
 	file *v1fileservice.V1Service,
 ) error {
-	// space handler
+	// TODO: space handler
 
 	sessionHandler := v1sessionmcphandler.NewV1Handler(sess)
 	sessTools := []mcp.ServerTool{
 		sessionHandler.CreateTool(),
 		sessionHandler.ListSessionsTool(),
 		sessionHandler.GetSessionTool(),
+		sessionHandler.ConnectToSpaceTool(),
 	}
 	for _, t := range sessTools {
 		if err := registrar.Handle(t); err != nil {

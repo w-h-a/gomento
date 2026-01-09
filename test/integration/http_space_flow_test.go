@@ -25,7 +25,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 1: Create Space & Session
 	// ==========================================
-	t.Log("Step 1: Creating Space & Session")
+	t.Log("Step 1: Creating Space & Session via HTTP")
 
 	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Frontend Space"})
 	spaceId := spaceRsp["id"].(string)
@@ -40,7 +40,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 2: Get Space
 	// ==========================================
-	t.Log("Step 2: Fetching Space Details")
+	t.Log("Step 2: Fetching Space Details via HTTP")
 
 	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s", baseURL, spaceId), nil)
 	rsp, err := client.Do(req)
@@ -54,7 +54,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 3: List Spaces
 	// ==========================================
-	t.Log("Step 3: Listing Spaces")
+	t.Log("Step 3: Listing Spaces via HTTP")
 
 	// Create another one to ensure list works
 	createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Backend Space"})
@@ -74,7 +74,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 4: Semantic Search
 	// ==========================================
-	t.Log("Step 4: Searching Skills & Messages")
+	t.Log("Step 4: Searching Skills & Messages via HTTP")
 
 	// Inject Data with Vectors manually
 	vecNorth := make([]float32, 1536)
