@@ -24,13 +24,14 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	// ==========================================
 	// Scenario 1: Create Orphan Session
 	// ==========================================
-	t.Log("Step 1: Creating Session")
+	t.Log("Step 1: Creating Orphan Session via HTTP")
 
 	sessRsp := createJson(t, client, baseURL+"/api/v1/sessions", map[string]any{
 		"space_id": nil,
 	})
 	sessionId := sessRsp["id"].(string)
 	require.NotEmpty(t, sessionId)
+	require.Nil(t, sessRsp["space_id"])
 
 	// ==========================================
 	// Scenario 2: Message Flow, Context & Pagination
