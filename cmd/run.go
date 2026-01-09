@@ -28,6 +28,7 @@ import (
 	v1sessionhttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_session"
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
 	v1filemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_file"
+	v1sessionmcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_session"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
 	mcpserver "github.com/w-h-a/gomento/internal/server/mcp"
@@ -348,14 +349,26 @@ func RegisterV1McpHandlers(
 	sess *v1sessionservice.V1Service,
 	file *v1fileservice.V1Service,
 ) error {
+	// space handler
+
+	sessionHandler := v1sessionmcphandler.NewV1Handler(sess)
+	sessTools := []mcp.ServerTool{
+		sessionHandler.CreateTool(),
+	}
+	for _, t := range sessTools {
+		if err := registrar.Handle(t); err != nil {
+			return err
+		}
+	}
+
 	fileHandler := v1filemcphandler.NewV1Handler(file)
-	tools := []mcp.ServerTool{
+	fileTools := []mcp.ServerTool{
 		fileHandler.UploadFileTool(),
 		fileHandler.ListFilesTool(),
 		fileHandler.GetFileTool(),
 		fileHandler.ConnectToSpaceTool(),
 	}
-	for _, t := range tools {
+	for _, t := range fileTools {
 		if err := registrar.Handle(t); err != nil {
 			return err
 		}
