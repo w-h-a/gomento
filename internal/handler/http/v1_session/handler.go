@@ -227,6 +227,25 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
+func (h *v1Handler) CheckpointSession(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["session_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
+		return
+	}
+
+	if err := h.service.CheckpointSession(ctx, id); err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "checkpoint_initiated"})
+}
+
 func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
@@ -257,25 +276,6 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, out)
-}
-
-func (h *v1Handler) CheckpointSession(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
-	vars := mux.Vars(r)
-	id, err := uuid.Parse(vars["session_id"])
-	if err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
-		return
-	}
-
-	if err := h.service.CheckpointSession(ctx, id); err != nil {
-		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "checkpoint_initiated"})
 }
 
 func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {

@@ -147,6 +147,68 @@ func (h *v1Handler) getSession(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultJSON(sess)
 }
 
+func (h *v1Handler) ConnectToSpaceTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "connect_session_to_space",
+			Description: "Connect an existing chat session to a space (domain of knowledge). Useful for organizing ad-hoc sessions into a domain.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id": map[string]string{"type": "string", "description": "The UUID of the session."},
+					"space_id":   map[string]string{"type": "string", "description": "The UUID of the space to connect to."},
+				},
+				Required: []string{
+					"session_id",
+					"space_id",
+				},
+			},
+		},
+		Handler: h.connectToSpace,
+	}
+}
+
+func (h *v1Handler) connectToSpace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessIdStr, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	sessId, err := uuid.Parse(sessIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	spaceIdStr, ok := args["space_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("invalid space_id"), nil
+	}
+
+	spaceId, err := uuid.Parse(spaceIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid space_id"), nil
+	}
+
+	if err := h.service.ConnectToSpace(ctx, sessId, spaceId); err != nil {
+		if errors.Is(err, service.ErrSessionNotFound) {
+			return mcp.NewToolResultError("session not found"), nil
+		}
+		if errors.Is(err, service.ErrSpaceNotFound) {
+			return mcp.NewToolResultError("space not found"), nil
+		}
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(map[string]string{"status": "connected"})
+}
+
 func NewV1Handler(s *v1session.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,
