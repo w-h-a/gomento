@@ -354,6 +354,8 @@ func RegisterV1McpHandlers(
 	sessionHandler := v1sessionmcphandler.NewV1Handler(sess)
 	sessTools := []mcp.ServerTool{
 		sessionHandler.CreateTool(),
+		sessionHandler.ListSessionsTool(),
+		sessionHandler.GetSessionTool(),
 	}
 	for _, t := range sessTools {
 		if err := registrar.Handle(t); err != nil {

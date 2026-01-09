@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 )
 
 func TestAPI_Http_Session_Flow(t *testing.T) {
@@ -22,9 +23,9 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	client, baseURL, db, _ := setupHttpServer(t)
 
 	// ==========================================
-	// Scenario 1: Create Orphan Session
+	// Scenario 1: Create & List Orphan Session
 	// ==========================================
-	t.Log("Step 1: Creating Orphan Session via HTTP")
+	t.Log("Step 1: Creating & Listing Orphan Session via HTTP")
 
 	sessRsp := createJson(t, client, baseURL+"/api/v1/sessions", map[string]any{
 		"space_id": nil,
@@ -32,6 +33,13 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	sessionId := sessRsp["id"].(string)
 	require.NotEmpty(t, sessionId)
 	require.Nil(t, sessRsp["space_id"])
+
+	listSessRsp, err := client.Get(fmt.Sprintf("%s/api/v1/sessions", baseURL))
+	require.NoError(t, err)
+	defer listSessRsp.Body.Close()
+	var sessListRsp v1session.ListSessionsOutput
+	json.NewDecoder(listSessRsp.Body).Decode(&sessListRsp)
+	assert.Equal(t, sessionId, sessListRsp.Items[0].Id.String())
 
 	// ==========================================
 	// Scenario 2: Message Flow, Context & Pagination
@@ -102,7 +110,9 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rsp.StatusCode)
 
 	// Verify Session State
-	getSessRsp, _ := client.Get(fmt.Sprintf("%s/api/v1/sessions/%s", baseURL, sessionId))
+	getSessRsp, err := client.Get(fmt.Sprintf("%s/api/v1/sessions/%s", baseURL, sessionId))
+	require.NoError(t, err)
+	defer getSessRsp.Body.Close()
 	var sessDetails map[string]any
 	json.NewDecoder(getSessRsp.Body).Decode(&sessDetails)
 	assert.Equal(t, spaceId, sessDetails["space_id"])
