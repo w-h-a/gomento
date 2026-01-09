@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAPI_Session_Flow(t *testing.T) {
+func TestAPI_Http_Session_Flow(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) == 0 {
 		t.Log("SKIPPING INTEGRATION TEST")
 		return
 	}
 
-	client, baseURL, db, _ := setupIntegrationServer(t)
+	client, baseURL, db, _ := setupHttpServer(t)
 
 	// ==========================================
 	// Scenario 1: Create Orphan Session

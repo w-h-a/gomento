@@ -116,7 +116,7 @@ func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 		"file": file,
 	}
 
-	if url != "" {
+	if len(url) > 0 {
 		rsp["public_url"] = url
 	}
 
