@@ -359,6 +359,9 @@ func RegisterV1McpHandlers(
 		sessionHandler.ConnectToSpaceTool(),
 		sessionHandler.AddMessageTool(),
 		sessionHandler.ListMessagesTool(),
+		sessionHandler.ExtractTasksTool(),
+		sessionHandler.ListTasksTool(),
+		sessionHandler.DistillSkillTool(),
 	}
 	for _, t := range sessTools {
 		if err := registrar.Handle(t); err != nil {
@@ -429,9 +432,9 @@ func RegisterV1HttpHandlers(
 	v1.Methods("POST").Path("/sessions/{session_id}/connect_to_space").HandlerFunc(sessionHandler.ConnectToSpace)
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.ListMessages)
-	v1.Methods("POST").Path("/sessions/{session_id}/checkpoint").HandlerFunc(sessionHandler.CheckpointSession)
+	v1.Methods("POST").Path("/sessions/{session_id}/extract").HandlerFunc(sessionHandler.ExtractTasks)
 	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.ListTasks)
-	v1.Methods("POST").Path("/sessions/{session_id}/finish").HandlerFunc(sessionHandler.FinishSession)
+	v1.Methods("POST").Path("/sessions/{session_id}/distill").HandlerFunc(sessionHandler.DistillSkill)
 
 	fileHandler := v1filehttphandler.NewV1Handler(file)
 	v1.Methods("POST").Path("/files").HandlerFunc(fileHandler.UploadFile)

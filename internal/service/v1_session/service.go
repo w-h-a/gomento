@@ -266,11 +266,11 @@ func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTask
 	return out, nil
 }
 
-func (s *V1Service) CheckpointSession(ctx context.Context, sessionId uuid.UUID) error {
+func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID) error {
 	return s.dispatchJob(ctx, sessionId, v1.JobTypeExtract)
 }
 
-func (s *V1Service) FinishSession(ctx context.Context, sessionId uuid.UUID) error {
+func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID) error {
 	return s.dispatchJob(ctx, sessionId, v1.JobTypeDistill)
 }
 
