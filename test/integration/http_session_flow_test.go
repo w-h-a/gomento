@@ -35,13 +35,13 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 		"space_id": nil,
 	})
 	req, _ := http.NewRequest("POST", baseURL+"/api/v1/sessions", bytes.NewBuffer(createReq))
-	rsp, err := client.Do(req)
+	crtRsp, err := client.Do(req)
 	require.NoError(t, err)
-	defer rsp.Body.Close()
-	require.Equal(t, http.StatusCreated, rsp.StatusCode)
+	defer crtRsp.Body.Close()
+	require.Equal(t, http.StatusCreated, crtRsp.StatusCode)
 
 	var out map[string]any
-	json.NewDecoder(rsp.Body).Decode(&out)
+	json.NewDecoder(crtRsp.Body).Decode(&out)
 
 	sessionId := out["id"].(string)
 	require.NotEmpty(t, sessionId)
@@ -119,9 +119,10 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 
 	connectReq, _ := json.Marshal(map[string]string{"space_id": spaceId.String()})
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/connect_to_space", baseURL, sessionId), bytes.NewBuffer(connectReq))
-	rsp, err = client.Do(req)
+	cnnRsp, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer cnnRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, cnnRsp.StatusCode)
 
 	// Verify Session State
 	getSessRsp, err := client.Get(fmt.Sprintf("%s/api/v1/sessions/%s", baseURL, sessionId))
@@ -137,9 +138,10 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	t.Log("Step 4: Triggering Task Extraction via HTTP")
 
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/extract", baseURL, sessionId), nil)
-	rsp, err = client.Do(req)
+	extRsp, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
+	defer extRsp.Body.Close()
+	assert.Equal(t, http.StatusAccepted, extRsp.StatusCode)
 
 	// Wait for async worker
 	assert.Eventually(t, func() bool {
@@ -155,9 +157,11 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 
 	// Verify Tasks were extracted
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/sessions/%s/tasks", baseURL, sessionId), nil)
-	rsp, _ = client.Do(req)
+	getTasksRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer getTasksRsp.Body.Close()
 	var tasksRsp v1session.ListTasksOutput
-	json.NewDecoder(rsp.Body).Decode(&tasksRsp)
+	json.NewDecoder(getTasksRsp.Body).Decode(&tasksRsp)
 
 	assert.NotEmpty(t, tasksRsp.Items)
 
@@ -167,9 +171,10 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	t.Log("Step 5: Triggering Distillation via HTTP")
 
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/distill", baseURL, sessionId), nil)
-	rsp, err = client.Do(req)
+	dstRsp, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
+	defer dstRsp.Body.Close()
+	assert.Equal(t, http.StatusAccepted, dstRsp.StatusCode)
 
 	// Wait for async worker
 	assert.Eventually(t, func() bool {

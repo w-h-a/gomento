@@ -1,10 +1,8 @@
 package integration
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -195,19 +193,4 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	t.Cleanup(ts.Close)
 
 	return ts.Client(), ts.URL, db, s3Client
-}
-
-// TODO: remove
-func createWithHttp(t *testing.T, client *http.Client, url string, data map[string]any) map[string]any {
-	body, _ := json.Marshal(data)
-	rsp, err := client.Post(url, "application/json", bytes.NewBuffer(body))
-	require.NoError(t, err)
-	defer rsp.Body.Close()
-
-	require.Equal(t, http.StatusCreated, rsp.StatusCode)
-
-	var out map[string]any
-	json.NewDecoder(rsp.Body).Decode(&out)
-
-	return out
 }
