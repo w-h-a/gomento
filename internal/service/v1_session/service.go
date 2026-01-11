@@ -113,19 +113,25 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			return nil, fmt.Errorf("part type %s missing file_field", pIn.Type)
 		}
 
-		fh, ok := in.Files[pIn.FileField]
+		inputFile, ok := in.Files[pIn.FileField]
 		if !ok {
 			return nil, fmt.Errorf("file %s not found", pIn.FileField)
 		}
 
-		asset, err := s.filer.UploadMultipart(ctx, fh)
+		asset, err := s.filer.UploadReader(
+			ctx,
+			inputFile.Reader,
+			inputFile.Filename,
+			inputFile.ContentType,
+			inputFile.Size,
+		)
 		if err != nil {
 			return nil, fmt.Errorf("upload failed: %w", err)
 		}
 
 		asset.Id = uuid.New()
 
-		domainPart.Meta["filename"] = fh.Filename
+		domainPart.Meta["filename"] = inputFile.Filename
 
 		currentPartIdx := len(finalParts)
 		assets[currentPartIdx] = asset

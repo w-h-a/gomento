@@ -27,12 +27,12 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	t.Log("Step 1: Creating Space & Session via HTTP")
 
-	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Frontend Space"})
+	spaceRsp := createWithHttp(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Frontend Space"})
 	spaceId := spaceRsp["id"].(string)
 	require.NotEmpty(t, spaceId)
 	assert.Equal(t, "Frontend Space", spaceRsp["name"])
 
-	sessRsp := createJson(t, client, baseURL+"/api/v1/sessions", map[string]any{"space_id": spaceId})
+	sessRsp := createWithHttp(t, client, baseURL+"/api/v1/sessions", map[string]any{"space_id": spaceId})
 	sessId := sessRsp["id"].(string)
 	require.NotEmpty(t, sessId)
 	assert.Equal(t, spaceId, sessRsp["space_id"])
@@ -57,7 +57,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	t.Log("Step 3: Listing Spaces via HTTP")
 
 	// Create another one to ensure list works
-	createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Backend Space"})
+	createWithHttp(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Backend Space"})
 
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces", baseURL), nil)
 	rsp, err = client.Do(req)

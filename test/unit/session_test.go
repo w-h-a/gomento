@@ -3,7 +3,6 @@ package unit
 import (
 	"context"
 	"encoding/json"
-	"mime/multipart"
 	"os"
 	"testing"
 	"time"
@@ -116,7 +115,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	files := map[string]*multipart.FileHeader{
+	inputFiles := map[string]v1session.InputFile{
 		"my_file": {Filename: "log.txt", Size: 100},
 	}
 	input := v1session.SendMessageInput{
@@ -126,7 +125,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 			{Type: "text", Text: "Hello World"},
 			{Type: "file", FileField: "my_file"},
 		},
-		Files: files,
+		Files: inputFiles,
 	}
 
 	msg, err := s.AddMessage(ctx, input)

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"mime/multipart"
 	"path/filepath"
 	"strings"
 	"time"
@@ -28,21 +27,7 @@ type v1S3Filer struct {
 	presigner *s3.PresignClient
 }
 
-func (f *v1S3Filer) UploadMultipart(ctx context.Context, fh *multipart.FileHeader) (*v1.Asset, error) {
-	file, err := fh.Open()
-	if err != nil {
-		return nil, fmt.Errorf("failed to open file header: %w", err)
-	}
-	defer file.Close()
-
-	return f.upload(ctx, file, fh.Filename, fh.Header.Get("Content-Type"), fh.Size)
-}
-
 func (f *v1S3Filer) UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
-	return f.upload(ctx, r, filename, contentType, size)
-}
-
-func (f *v1S3Filer) upload(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
 	if len(contentType) == 0 {
 		contentType = "application/octet-stream"
 	}
