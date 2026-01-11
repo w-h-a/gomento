@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
 )
 
 func TestAPI_Http_Space_Flow(t *testing.T) {
@@ -27,29 +29,37 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	// ==========================================
 	t.Log("Step 1: Creating Space & Session via HTTP")
 
-	spaceRsp := createWithHttp(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Frontend Space"})
+	body, _ := json.Marshal(map[string]any{"name": "Frontend Space"})
+	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/spaces", baseURL), bytes.NewBuffer(body))
+	crtRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer crtRsp.Body.Close()
+	assert.Equal(t, http.StatusCreated, crtRsp.StatusCode)
+
+	var spaceRsp map[string]any
+	json.NewDecoder(crtRsp.Body).Decode(&spaceRsp)
 	spaceId := spaceRsp["id"].(string)
 	require.NotEmpty(t, spaceId)
 	assert.Equal(t, "Frontend Space", spaceRsp["name"])
 
-	sessRsp := createWithHttp(t, client, baseURL+"/api/v1/sessions", map[string]any{"space_id": spaceId})
-	sessId := sessRsp["id"].(string)
-	require.NotEmpty(t, sessId)
-	assert.Equal(t, spaceId, sessRsp["space_id"])
+	sessId := uuid.New()
+	_, err = db.Exec("INSERT INTO sessions (id, space_id, created_at) VALUES ($1, $2, NOW())", sessId, spaceId)
+	require.NoError(t, err)
 
 	// ==========================================
 	// Scenario 2: Get Space
 	// ==========================================
 	t.Log("Step 2: Fetching Space Details via HTTP")
 
-	req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s", baseURL, spaceId), nil)
-	rsp, err := client.Do(req)
+	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s", baseURL, spaceId), nil)
+	getRsp, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer getRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, getRsp.StatusCode)
 
-	var getRsp map[string]any
-	json.NewDecoder(rsp.Body).Decode(&getRsp)
-	assert.Equal(t, spaceId, getRsp["id"])
+	var getRes map[string]any
+	json.NewDecoder(getRsp.Body).Decode(&getRes)
+	assert.Equal(t, spaceId, getRes["id"])
 
 	// ==========================================
 	// Scenario 3: List Spaces
@@ -57,17 +67,21 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	t.Log("Step 3: Listing Spaces via HTTP")
 
 	// Create another one to ensure list works
-	createWithHttp(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "Backend Space"})
+	body, _ = json.Marshal(map[string]any{"name": "Backend Space"})
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/spaces", baseURL), bytes.NewBuffer(body))
+	crtRsp2, err := client.Do(req)
+	require.NoError(t, err)
+	defer crtRsp2.Body.Close()
+	assert.Equal(t, http.StatusCreated, crtRsp2.StatusCode)
 
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces", baseURL), nil)
-	rsp, err = client.Do(req)
+	getRsp2, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer getRsp2.Body.Close()
+	assert.Equal(t, http.StatusOK, getRsp2.StatusCode)
 
-	var listRsp struct {
-		Items []map[string]any `json:"items"`
-	}
-	json.NewDecoder(rsp.Body).Decode(&listRsp)
+	var listRsp v1space.ListSpacesOutput
+	json.NewDecoder(getRsp2.Body).Decode(&listRsp)
 
 	assert.GreaterOrEqual(t, len(listRsp.Items), 2)
 

@@ -40,12 +40,13 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 
 	req, _ := http.NewRequest("POST", fmt.Sprintf("%s/api/v1/files", baseURL), body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	rsp, err := client.Do(req)
+	glbRsp, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer glbRsp.Body.Close()
+	require.Equal(t, http.StatusOK, glbRsp.StatusCode)
 
 	var globalFile map[string]any
-	err = json.NewDecoder(rsp.Body).Decode(&globalFile)
+	err = json.NewDecoder(glbRsp.Body).Decode(&globalFile)
 	require.NoError(t, err)
 
 	globalId := globalFile["id"].(string)
@@ -89,12 +90,13 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	url := fmt.Sprintf("%s/api/v1/files?space_id=%s", baseURL, spaceId)
 	req, _ = http.NewRequest("POST", url, body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	rsp, err = client.Do(req)
+	spcRsp, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer spcRsp.Body.Close()
+	require.Equal(t, http.StatusOK, spcRsp.StatusCode)
 
 	var spaceFile map[string]any
-	json.NewDecoder(rsp.Body).Decode(&spaceFile)
+	json.NewDecoder(spcRsp.Body).Decode(&spaceFile)
 
 	assert.Equal(t, spaceId.String(), spaceFile["space_id"])
 	assert.NotEqual(t, globalId, spaceFile["id"], "Space file should have distinct ID from global file")
@@ -110,22 +112,25 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 
 	// List Global Only
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files", baseURL), nil)
-	rsp, err = client.Do(req)
+	getRsp, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer getRsp.Body.Close()
+	require.Equal(t, http.StatusOK, getRsp.StatusCode)
 	var globalList v1file.ListFilesOutput
-	json.NewDecoder(rsp.Body).Decode(&globalList)
+	json.NewDecoder(getRsp.Body).Decode(&globalList)
 
 	assert.Len(t, globalList.Items, 1)
 	assert.Equal(t, globalId, globalList.Items[0].Id.String())
 
 	// List Space Only
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files?space_id=%s", baseURL, spaceId), nil)
-	rsp, err = client.Do(req)
+	getRsp2, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer getRsp2.Body.Close()
+	require.Equal(t, http.StatusOK, getRsp2.StatusCode)
+
 	var spaceList v1file.ListFilesOutput
-	json.NewDecoder(rsp.Body).Decode(&spaceList)
+	json.NewDecoder(getRsp2.Body).Decode(&spaceList)
 
 	assert.Len(t, spaceList.Items, 1)
 	assert.Equal(t, spaceFile["id"], spaceList.Items[0].Id.String())
@@ -136,12 +141,13 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	t.Log("Step 4: Fetching File with Presigned URL via HTTP")
 
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files/%s?with_url=true", baseURL, globalId), nil)
-	rsp, err = client.Do(req)
+	getRsp3, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer getRsp3.Body.Close()
+	require.Equal(t, http.StatusOK, getRsp3.StatusCode)
 
 	var getRes map[string]any
-	json.NewDecoder(rsp.Body).Decode(&getRes)
+	json.NewDecoder(getRsp3.Body).Decode(&getRes)
 
 	f := getRes["file"].(map[string]any)
 	assert.Equal(t, globalId, f["id"])
@@ -162,37 +168,48 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/files", baseURL), body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	rsp, _ = client.Do(req)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	orphanRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer orphanRsp.Body.Close()
+	require.Equal(t, http.StatusOK, orphanRsp.StatusCode)
 
 	var orphanFile map[string]any
-	json.NewDecoder(rsp.Body).Decode(&orphanFile)
+	json.NewDecoder(orphanRsp.Body).Decode(&orphanFile)
 	orphanId := orphanFile["id"].(string)
 
 	// 2. Connect
 	connectBody, _ := json.Marshal(map[string]string{"space_id": spaceId.String()})
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/files/%s/connect_to_space", baseURL, orphanId), bytes.NewBuffer(connectBody))
-	rsp, err = client.Do(req)
+	cnnRsp, err := client.Do(req)
 	require.NoError(t, err)
-	assert.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer cnnRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, cnnRsp.StatusCode)
 
 	// 3. Verify it moved
 	// Check Global List
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files", baseURL), nil)
-	rsp, _ = client.Do(req)
-	json.NewDecoder(rsp.Body).Decode(&globalList)
+	glblList, err := client.Do(req)
+	require.NoError(t, err)
+	defer glblList.Body.Close()
+
+	json.NewDecoder(glblList.Body).Decode(&globalList)
+
 	foundOrphanInGlobal := false
 	for _, item := range globalList.Items {
 		if item.Id.String() == orphanId {
 			foundOrphanInGlobal = true
 		}
 	}
+
 	assert.False(t, foundOrphanInGlobal, "Orphan file should no longer appear in global list")
 
 	// Check Space List
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files?space_id=%s", baseURL, spaceId), nil)
-	rsp, _ = client.Do(req)
-	json.NewDecoder(rsp.Body).Decode(&spaceList)
+	spcList, err := client.Do(req)
+	require.NoError(t, err)
+	defer spcList.Body.Close()
+
+	json.NewDecoder(spcList.Body).Decode(&spaceList)
 
 	foundOrphanInSpace := false
 	for _, item := range spaceList.Items {
@@ -200,6 +217,7 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 			foundOrphanInSpace = true
 		}
 	}
+
 	assert.True(t, foundOrphanInSpace, "Orphan file should now appear in space list")
 
 	// ==========================================
@@ -218,17 +236,19 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	url = fmt.Sprintf("%s/api/v1/files?space_id=%s", baseURL, spaceId)
 	req, _ = http.NewRequest("POST", url, body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	rsp, err = client.Do(req)
+	uplRsp, err := client.Do(req)
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, rsp.StatusCode)
+	defer uplRsp.Body.Close()
+	require.Equal(t, http.StatusOK, uplRsp.StatusCode)
 
 	// 2. Filter for that directory
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/files?space_id=%s&path_prefix=src", baseURL, spaceId), nil)
-	rsp, err = client.Do(req)
+	fltRsp, err := client.Do(req)
 	require.NoError(t, err)
+	defer fltRsp.Body.Close()
 
 	var filteredList v1file.ListFilesOutput
-	json.NewDecoder(rsp.Body).Decode(&filteredList)
+	json.NewDecoder(fltRsp.Body).Decode(&filteredList)
 
 	assert.Len(t, filteredList.Items, 1)
 	assert.Equal(t, "main.go", filteredList.Items[0].Filename)
