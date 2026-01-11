@@ -3,7 +3,7 @@ package v1session
 import (
 	"encoding/json"
 	"errors"
-	"mime/multipart"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -156,27 +156,53 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	role := r.FormValue("role")
+
 	partsStr := r.FormValue("parts")
+
 	var parts []v1session.PartInput
 	if err := json.Unmarshal([]byte(partsStr), &parts); err != nil {
 		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid parts JSON")
 		return
 	}
 
-	fileMap := make(map[string]*multipart.FileHeader)
+	inputFiles := make(map[string]v1session.InputFile)
+
+	var closers []io.Closer
+	defer func() {
+		for _, c := range closers {
+			c.Close()
+		}
+	}()
+
 	if r.MultipartForm != nil {
 		for name, files := range r.MultipartForm.File {
 			if len(files) > 0 {
-				fileMap[name] = files[0]
+				fh := files[0]
+
+				f, err := fh.Open()
+				if err != nil {
+					httphandler.WrtErr(w, http.StatusInternalServerError, "failed to open file")
+					return
+				}
+
+				closers = append(closers, f)
+
+				inputFiles[name] = v1session.InputFile{
+					Filename:    fh.Filename,
+					ContentType: fh.Header.Get("Content-Type"),
+					Size:        fh.Size,
+					Reader:      f,
+				}
 			}
 		}
 	}
 
 	input := v1session.SendMessageInput{
 		SessionId: id,
-		Role:      r.FormValue("role"),
+		Role:      role,
 		Parts:     parts,
-		Files:     fileMap,
+		Files:     inputFiles,
 	}
 
 	msg, err := h.service.AddMessage(ctx, input)
@@ -207,6 +233,7 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cursor := r.URL.Query().Get("cursor")
+
 	withPublicUrl := r.URL.Query().Get("with_asset_public_url") == "true"
 
 	out, err := h.service.ListMessages(ctx, v1session.ListMessagesInput{

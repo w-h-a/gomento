@@ -357,6 +357,8 @@ func RegisterV1McpHandlers(
 		sessionHandler.ListSessionsTool(),
 		sessionHandler.GetSessionTool(),
 		sessionHandler.ConnectToSpaceTool(),
+		sessionHandler.AddMessageTool(),
+		sessionHandler.ListMessagesTool(),
 	}
 	for _, t := range sessTools {
 		if err := registrar.Handle(t); err != nil {

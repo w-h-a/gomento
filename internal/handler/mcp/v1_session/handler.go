@@ -2,13 +2,16 @@ package v1session
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/w-h-a/gomento/internal/service"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
+	"github.com/w-h-a/gomento/internal/util"
 )
 
 type v1Handler struct {
@@ -207,6 +210,189 @@ func (h *v1Handler) connectToSpace(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	return mcp.NewToolResultJSON(map[string]string{"status": "connected"})
+}
+
+func (h *v1Handler) AddMessageTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "add_message",
+			Description: "Add a new message to a chat session. Supports text and multiple file attachments.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to add the message to."},
+					"role":       map[string]string{"type": "string", "description": "'user' or 'assistant'."},
+					"parts": map[string]any{
+						"type":        "array",
+						"description": "List of message parts.",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"type":       map[string]string{"type": "string", "description": "'text' or 'file'."},
+								"text":       map[string]string{"type": "string", "description": "Content for text parts."},
+								"file_field": map[string]string{"type": "string", "description": "Key in the 'files' map for file parts."},
+							},
+						},
+					},
+					"files": map[string]any{
+						"type":        "object",
+						"description": "Map of filename -> content strings. Used if parts contain file references.",
+						"additionalProperties": map[string]string{
+							"type": "string",
+						},
+					},
+				},
+				Required: []string{
+					"session_id",
+					"role",
+					"parts",
+				},
+			},
+		},
+		Handler: h.addMessage,
+	}
+}
+
+func (h *v1Handler) addMessage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessIdStr, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	sessId, err := uuid.Parse(sessIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	role, ok := args["role"].(string)
+	if !ok {
+		return mcp.NewToolResultError("invalid role"), nil
+	}
+
+	partsRaw, ok := args["parts"].([]any)
+	if !ok {
+		return mcp.NewToolResultError("missing parts"), nil
+	}
+
+	partsBytes, err := json.Marshal(partsRaw)
+	if err != nil {
+		return mcp.NewToolResultError("invalid parts"), nil
+	}
+
+	var parts []v1session.PartInput
+	if err := json.Unmarshal(partsBytes, &parts); err != nil {
+		return mcp.NewToolResultError("invalid parts structure"), nil
+	}
+
+	inputFiles := make(map[string]v1session.InputFile)
+
+	if filesRaw, ok := args["files"].(map[string]any); ok && len(filesRaw) > 0 {
+		for name, file := range filesRaw {
+			content, ok := file.(string)
+			if !ok {
+				continue
+			}
+
+			reader := strings.NewReader(content)
+
+			inputFiles[name] = v1session.InputFile{
+				Filename:    name,
+				ContentType: "text/plain",
+				Size:        int64(len(content)),
+				Reader:      reader,
+			}
+		}
+	}
+
+	input := v1session.SendMessageInput{
+		SessionId: sessId,
+		Role:      role,
+		Parts:     parts,
+		Files:     inputFiles,
+	}
+
+	msg, err := h.service.AddMessage(ctx, input)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(msg)
+}
+
+func (h *v1Handler) ListMessagesTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "list_messages",
+			Description: "List messages in a session with pagination.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id":            map[string]string{"type": "string", "description": "The UUID of the session to list messages for."},
+					"limit":                 map[string]string{"type": "integer", "description": "Maximum number of messages to return (default is 20)."},
+					"cursor":                map[string]string{"type": "string", "description": "Cursor for pagination."},
+					"with_asset_public_url": map[string]string{"type": "boolean", "description": "Include presigned URLs for assets."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		Handler: h.listMessages,
+	}
+}
+
+func (h *v1Handler) listMessages(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessId, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing session_id"), nil
+	}
+
+	id, err := uuid.Parse(sessId)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	var limit int
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+	}
+
+	cursor, ok := args["cursor"].(string)
+	if !ok {
+		cursor = ""
+	}
+
+	withPublicUrl, ok := args["with_asset_public_url"].(bool)
+	if !ok {
+		withPublicUrl = false
+	}
+
+	out, err := h.service.ListMessages(ctx, v1session.ListMessagesInput{
+		SessionId:          id,
+		Limit:              limit,
+		Cursor:             cursor,
+		WithAssetPublicUrl: withPublicUrl,
+	})
+	if err != nil {
+		if errors.Is(err, util.ErrInvalidCursor) {
+			return mcp.NewToolResultError("invalid cursor format"), nil
+		}
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(out)
 }
 
 func NewV1Handler(s *v1session.V1Service) *v1Handler {

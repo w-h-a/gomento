@@ -12,6 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
@@ -73,8 +74,9 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	t.Log("Step 2: Uploading a Space-Scoped File via HTTP")
 
 	// Create Space
-	spaceRsp := createJson(t, client, baseURL+"/api/v1/spaces", map[string]any{"name": "DevOps Space"})
-	spaceId := spaceRsp["id"].(string)
+	spaceId := uuid.New()
+	_, err = db.Exec("INSERT INTO spaces (id, name, created_at) VALUES ($1, $2, NOW())", spaceId, "DevOps Space")
+	require.NoError(t, err)
 
 	// Upload File to Space
 	body = &bytes.Buffer{}
@@ -94,7 +96,7 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	var spaceFile map[string]any
 	json.NewDecoder(rsp.Body).Decode(&spaceFile)
 
-	assert.Equal(t, spaceId, spaceFile["space_id"])
+	assert.Equal(t, spaceId.String(), spaceFile["space_id"])
 	assert.NotEqual(t, globalId, spaceFile["id"], "Space file should have distinct ID from global file")
 
 	err = db.QueryRow("SELECT count(*) FROM files WHERE id = $1 AND space_id = $2", spaceFile["id"], spaceId).Scan(&count)
@@ -168,7 +170,7 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 	orphanId := orphanFile["id"].(string)
 
 	// 2. Connect
-	connectBody, _ := json.Marshal(map[string]string{"space_id": spaceId})
+	connectBody, _ := json.Marshal(map[string]string{"space_id": spaceId.String()})
 	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/files/%s/connect_to_space", baseURL, orphanId), bytes.NewBuffer(connectBody))
 	rsp, err = client.Do(req)
 	require.NoError(t, err)
