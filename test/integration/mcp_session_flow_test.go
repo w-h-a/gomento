@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/client"
@@ -166,6 +167,85 @@ func TestAPI_Mcp_Session_Flow(t *testing.T) {
 	var sessDetails map[string]any
 	json.Unmarshal([]byte(textContent.Text), &sessDetails)
 	assert.Equal(t, spaceId.String(), sessDetails["space_id"])
+
+	// ==========================================
+	// Scenario 4: Worker Checkpoint (Extract Tasks)
+	// ==========================================
+	t.Log("Step 4: Triggering Task Extraction via MCP")
+
+	result, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "extract_tasks",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	// Wait for async worker
+	assert.Eventually(t, func() bool {
+		var status string
+		err := db.QueryRow(`
+            SELECT status FROM jobs 
+            WHERE payload->>'session_id' = $1 AND type = 'extract_session' 
+            ORDER BY created_at DESC LIMIT 1`,
+			sessionId,
+		).Scan(&status)
+		return err == nil && status == "success"
+	}, 5*time.Second, 100*time.Millisecond, "Extraction Job should succeed")
+
+	// Verify Tasks were extracted
+	resTasks, err := client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "list_tasks",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, resTasks.IsError)
+
+	var tasksOut v1session.ListTasksOutput
+	json.Unmarshal([]byte(resTasks.Content[0].(mcp.TextContent).Text), &tasksOut)
+
+	assert.NotEmpty(t, tasksOut.Items)
+
+	// ==========================================
+	// Scenario 5: Worker Finish (Distill Skill)
+	// ==========================================
+	t.Log("Step 5: Triggering Distillation via MCP")
+
+	resFinish, err := client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "distill_skill",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, resFinish.IsError)
+
+	// Wait for async worker
+	assert.Eventually(t, func() bool {
+		var status string
+		err := db.QueryRow(`
+            SELECT status FROM jobs 
+            WHERE payload->>'session_id' = $1 AND type = 'distill_session' 
+            ORDER BY created_at DESC LIMIT 1`,
+			sessionId,
+		).Scan(&status)
+		return err == nil && status == "success"
+	}, 5*time.Second, 100*time.Millisecond, "Distill Job should succeed")
+
+	// 3. Verify Skill Created (linked to space)
+	var skillCount int
+	err = db.QueryRow("SELECT count(*) FROM skills WHERE space_id = $1", spaceId).Scan(&skillCount)
+	assert.NoError(t, err)
+	assert.Greater(t, skillCount, 0, "Skill should be saved to the Space")
 }
 
 func sendMessagesViaMcp(

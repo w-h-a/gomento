@@ -395,6 +395,149 @@ func (h *v1Handler) listMessages(ctx context.Context, req mcp.CallToolRequest) (
 	return mcp.NewToolResultJSON(out)
 }
 
+func (h *v1Handler) ExtractTasksTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "extract_tasks",
+			Description: "Trigger a background job to analyze the session history and update the task list (Extract).",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to extract tasks for."},
+				},
+				Required: []string{
+					"session_id",
+				},
+			},
+		},
+		Handler: h.extractTasks,
+	}
+}
+
+func (h *v1Handler) extractTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessId, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing session_id"), nil
+	}
+
+	id, err := uuid.Parse(sessId)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	if err := h.service.ExtractTasks(ctx, id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(map[string]string{"status": "extraction_initiated"})
+}
+
+func (h *v1Handler) ListTasksTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "list_tasks",
+			Description: "List the tasks extracted from the session so far.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to list tasks for."},
+					"status":     map[string]string{"type": "string", "description": "Filter by status (e.g., 'pending', 'running', 'success', 'failed')."},
+				},
+				Required: []string{
+					"session_id",
+				},
+			},
+		},
+		Handler: h.listTasks,
+	}
+}
+
+func (h *v1Handler) listTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessId, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing session_id"), nil
+	}
+
+	id, err := uuid.Parse(sessId)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	var status *string
+	if s, ok := args["status"].(string); ok && s != "" {
+		status = &s
+	}
+
+	out, err := h.service.ListTasks(ctx, v1session.ListTasksInput{
+		SessionId: id,
+		Status:    status,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrSessionNotFound) {
+			return mcp.NewToolResultError("session not found"), nil
+		}
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(out)
+}
+
+func (h *v1Handler) DistillSkillTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "distill_skill",
+			Description: "Trigger a background job to distill the session into a reusable skill (Distill).",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to distill into a reusable skill."},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		Handler: h.distillSkill,
+	}
+}
+
+func (h *v1Handler) distillSkill(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// TODO: traces?
+
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	sessId, ok := args["session_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing session_id"), nil
+	}
+
+	id, err := uuid.Parse(sessId)
+	if err != nil {
+		return mcp.NewToolResultError("invalid session_id"), nil
+	}
+
+	if err := h.service.DistillSkill(ctx, id); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(map[string]string{"status": "distillation_initiated"})
+}
+
 func NewV1Handler(s *v1session.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,

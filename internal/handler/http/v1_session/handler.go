@@ -254,7 +254,7 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) CheckpointSession(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -265,12 +265,12 @@ func (h *v1Handler) CheckpointSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.CheckpointSession(ctx, id); err != nil {
+	if err := h.service.ExtractTasks(ctx, id); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "checkpoint_initiated"})
+	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "extraction_initiated"})
 }
 
 func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
@@ -305,7 +305,7 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -316,12 +316,12 @@ func (h *v1Handler) FinishSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.FinishSession(ctx, id); err != nil {
+	if err := h.service.DistillSkill(ctx, id); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "finish_initiated"})
+	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "distillation_initiated"})
 }
 
 func NewV1Handler(s *v1session.V1Service) *v1Handler {

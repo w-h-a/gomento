@@ -132,11 +132,11 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	assert.Equal(t, spaceId.String(), sessDetails["space_id"])
 
 	// ==========================================
-	// Scenario 4: Worker Checkpoint (Extract Tasks)
+	// Scenario 4: Worker Trigger (Extract Tasks)
 	// ==========================================
-	t.Log("Step 4: Triggering Checkpoint via HTTP")
+	t.Log("Step 4: Triggering Task Extraction via HTTP")
 
-	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/checkpoint", baseURL, sessionId), nil)
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/extract", baseURL, sessionId), nil)
 	rsp, err = client.Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
@@ -156,23 +156,22 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	// Verify Tasks were extracted
 	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/sessions/%s/tasks", baseURL, sessionId), nil)
 	rsp, _ = client.Do(req)
-	var tasksRsp struct {
-		Items []map[string]any `json:"items"`
-	}
+	var tasksRsp v1session.ListTasksOutput
 	json.NewDecoder(rsp.Body).Decode(&tasksRsp)
 
 	assert.NotEmpty(t, tasksRsp.Items)
 
 	// ==========================================
-	// Scenario 5: Worker Finish (Distill Skill)
+	// Scenario 5: Worker Trigger (Distill Skill)
 	// ==========================================
 	t.Log("Step 5: Triggering Distillation via HTTP")
 
-	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/finish", baseURL, sessionId), nil)
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/distill", baseURL, sessionId), nil)
 	rsp, err = client.Do(req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusAccepted, rsp.StatusCode)
 
+	// Wait for async worker
 	assert.Eventually(t, func() bool {
 		var status string
 		err := db.QueryRow(`
