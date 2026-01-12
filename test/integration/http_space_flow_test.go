@@ -43,7 +43,7 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	assert.Equal(t, "Frontend Space", spaceRsp["name"])
 
 	sessId := uuid.New()
-	_, err = db.Exec("INSERT INTO sessions (id, space_id, created_at) VALUES ($1, $2, NOW())", sessId, spaceId)
+	_, err = db.Exec("INSERT INTO sessions (id, space_id, created_at) VALUES ($1, $2, NOW())", sessId.String(), spaceId)
 	require.NoError(t, err)
 
 	// ==========================================

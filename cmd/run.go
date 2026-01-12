@@ -29,6 +29,7 @@ import (
 	v1spacehttphandler "github.com/w-h-a/gomento/internal/handler/http/v1_space"
 	v1filemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_file"
 	v1sessionmcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_session"
+	v1spacemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_space"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
 	mcpserver "github.com/w-h-a/gomento/internal/server/mcp"
@@ -349,7 +350,19 @@ func RegisterV1McpHandlers(
 	sess *v1sessionservice.V1Service,
 	file *v1fileservice.V1Service,
 ) error {
-	// TODO: space handler
+	spaceHandler := v1spacemcphandler.NewV1Handler(spac)
+	spaceTools := []mcp.ServerTool{
+		spaceHandler.CreateTool(),
+		spaceHandler.ListSpacesTool(),
+		spaceHandler.GetSpaceTool(),
+		spaceHandler.SearchSkillsTool(),
+		spaceHandler.SearchMessagesTool(),
+	}
+	for _, t := range spaceTools {
+		if err := registrar.Handle(t); err != nil {
+			return err
+		}
+	}
 
 	sessionHandler := v1sessionmcphandler.NewV1Handler(sess)
 	sessTools := []mcp.ServerTool{
