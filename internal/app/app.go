@@ -1,17 +1,12 @@
-package cmd
+package app
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
-	"os/signal"
-	"sync"
-	"syscall"
+	gohttp "net/http"
 
 	"github.com/gorilla/mux"
 	mcp "github.com/mark3labs/mcp-go/server"
-	"github.com/urfave/cli/v2"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
 	"github.com/w-h-a/gomento/internal/client/embedder"
@@ -36,212 +31,26 @@ import (
 	v1fileservice "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1spaceservice "github.com/w-h-a/gomento/internal/service/v1_space"
-	v1workerservice "github.com/w-h-a/gomento/internal/service/v1_worker"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
+	logsdk "go.opentelemetry.io/otel/sdk/log"
+	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func Run(c *cli.Context) error {
-	ctx := c.Context
+// TODO: accept user configuration
+func InitLogsExporter(ctx context.Context) (logsdk.Exporter, error) {
+	return stdoutlog.New()
+}
 
-	stopChannels := map[string]chan struct{}{}
-
-	mode := c.String("mode")
-	qname := c.String("qname")
-
-	if len(qname) == 0 {
-		qname = "worker"
-	}
-
-	apiKey := c.String("api_key")
-
-	disp, err := InitV1Dispatcher(ctx)
-	if err != nil {
-		return err
-	}
-
-	var workerService *v1workerservice.V1Service
-	if mode == "" || mode == "worker" {
-		slog.InfoContext(ctx, "initiating worker")
-
-		p, err := InitV1Persister(ctx, "postgres://user:password@localhost:5432/gomento?sslmode=disable")
-		if err != nil {
-			return err
-		}
-
-		i, err := InitV1Interpreter(
-			ctx,
-			apiKey,
-			"gpt-3.5-turbo",
-		)
-		if err != nil {
-			return err
-		}
-
-		e, err := InitEmbedder(
-			ctx,
-			apiKey,
-			"text-embedding-3-small",
-		)
-		if err != nil {
-			return err
-		}
-
-		workerService = v1workerservice.NewV1Service(
-			p,
-			disp,
-			i,
-			e,
-		)
-		stopChannels["worker"] = make(chan struct{})
-	}
-
-	var spaceService *v1spaceservice.V1Service
-	var sessionService *v1sessionservice.V1Service
-	var fileService *v1fileservice.V1Service
-	var httpServer server.Server
-	if mode == "" || mode == "server" {
-		slog.InfoContext(ctx, "initiating http server")
-
-		p, err := InitV1Persister(ctx, "postgres://user:password@localhost:5432/gomento?sslmode=disable")
-		if err != nil {
-			return err
-		}
-
-		f, err := InitV1Filer(
-			ctx,
-			"http://localhost:9000",
-			"http://localhost:9000",
-			"us-east-1",
-			"gomento-assets",
-			"user",
-			"password",
-		)
-		if err != nil {
-			return err
-		}
-
-		e, err := InitEmbedder(
-			ctx,
-			apiKey,
-			"text-embedding-3-small",
-		)
-		if err != nil {
-			return err
-		}
-
-		spaceService = v1spaceservice.NewV1Service(p, e)
-		stopChannels["space"] = make(chan struct{})
-		sessionService = v1sessionservice.NewV1Service(
-			p,
-			disp,
-			f,
-			e,
-			qname,
-		)
-		stopChannels["session"] = make(chan struct{})
-		fileService = v1fileservice.NewV1Service(
-			p,
-			f,
-		)
-		stopChannels["file"] = make(chan struct{})
-
-		httpServer, err = InitV1HttpServer(
-			ctx,
-			":4000",
-			spaceService,
-			sessionService,
-			fileService,
-		)
-		stopChannels["httpserver"] = make(chan struct{})
-	}
-
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(stopChannels))
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	if workerService != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slog.InfoContext(ctx, "worker running")
-			errCh <- workerService.Run(
-				stopChannels["worker"],
-				func() error {
-					return workerService.Subscribe(ctx, workerService.ProcessJob, qname)
-				},
-				func(ctx context.Context) error {
-					return workerService.Close(ctx)
-				},
-			)
-		}()
-	}
-
-	if httpServer != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slog.InfoContext(ctx, "space service running")
-			errCh <- spaceService.Run(
-				stopChannels["space"],
-				nil,
-				nil,
-			)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slog.InfoContext(ctx, "session service running")
-			errCh <- sessionService.Run(
-				stopChannels["session"],
-				nil,
-				nil,
-			)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slog.InfoContext(ctx, "file service running")
-			errCh <- fileService.Run(
-				stopChannels["file"],
-				nil,
-				nil,
-			)
-		}()
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			slog.InfoContext(ctx, "http server running")
-			errCh <- httpServer.Run(stopChannels["httpserver"])
-		}()
-	}
-
-	select {
-	case err := <-errCh:
-		if err != nil {
-			slog.ErrorContext(ctx, "startup failure", "error", err)
-			return err
-		}
-	case <-sigChan:
-		for _, stop := range stopChannels {
-			close(stop)
-		}
-	}
-
-	wg.Wait()
-
-	close(errCh)
-	for err := range errCh {
-		if err != nil {
-			slog.ErrorContext(ctx, "close failure", "error", err)
-		}
-	}
-
-	slog.InfoContext(ctx, "shutdown complete")
-
-	return nil
+// TODO: accept user configuration
+func InitTracesExporter(ctx context.Context, loc string) (tracesdk.SpanExporter, error) {
+	return otlptracehttp.New(
+		ctx,
+		otlptracehttp.WithEndpoint(loc),
+		otlptracehttp.WithInsecure(),
+	)
 }
 
 // TODO: accept user configuration
@@ -415,7 +224,16 @@ func InitV1HttpServer(
 		return nil, fmt.Errorf("failed to init router: %w", err)
 	}
 
-	if err := srv.Handle(v1); err != nil {
+	handler := otelhttp.NewHandler(
+		v1,
+		"",
+		otelhttp.WithSpanNameFormatter(func(operation string, r *gohttp.Request) string { return r.URL.Path }),
+		otelhttp.WithTracerProvider(otel.GetTracerProvider()),
+		otelhttp.WithPropagators(otel.GetTextMapPropagator()),
+		otelhttp.WithFilter(func(r *gohttp.Request) bool { return r.URL.Path != "/api/v1/status" }),
+	)
+
+	if err := srv.Handle(handler); err != nil {
 		return nil, fmt.Errorf("failed to attach handler: %w", err)
 	}
 

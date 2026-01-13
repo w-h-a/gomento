@@ -1,0 +1,27 @@
+name: Post Tag
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+concurrency: 
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps: 
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Fetch tags
+        run: |
+          git fetch --prune --unshallow
+      - name: Publish gomento
+        uses: elgohr/Publish-Docker-Github-Action@v5
+        with:
+          name: wesha/gomento
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          tag_semver: true
