@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/filer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/aws/aws-sdk-go-v2/otelaws"
 )
 
 type v1S3Filer struct {
@@ -118,6 +119,8 @@ func NewV1Filer(opts ...filer.Option) filer.V1Filer {
 		slog.ErrorContext(context.Background(), detail, "error", err)
 		panic(detail)
 	}
+
+	otelaws.AppendMiddlewares(&cfg.APIOptions)
 
 	client := s3.NewFromConfig(cfg, func(o *s3.Options) {
 		o.UsePathStyle = true
