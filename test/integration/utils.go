@@ -19,7 +19,7 @@ import (
 	mcpclient "github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
-	"github.com/w-h-a/gomento/cmd"
+	"github.com/w-h-a/gomento/internal/app"
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
@@ -83,11 +83,11 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 		})
 	}
 
-	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
-	d, _ := cmd.InitV1Dispatcher(ctx)
-	i, _ := cmd.InitV1Interpreter(ctx, "", "")
-	e, _ := cmd.InitEmbedder(ctx, "", "")
-	f, _ := cmd.InitV1Filer(
+	p, _ := app.InitV1Persister(ctx, DB_CONN)
+	d, _ := app.InitV1Dispatcher(ctx)
+	i, _ := app.InitV1Interpreter(ctx, "", "")
+	e, _ := app.InitEmbedder(ctx, "", "")
+	f, _ := app.InitV1Filer(
 		ctx,
 		MINIO_END,
 		MINIO_PUBLIC,
@@ -108,7 +108,7 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 
 	adapter := &mcpTestAdapter{server: rawMcpServer}
 
-	_ = cmd.RegisterV1McpHandlers(ctx, adapter, spaceSvc, sessSvc, fileSvc)
+	_ = app.RegisterV1McpHandlers(ctx, adapter, spaceSvc, sessSvc, fileSvc)
 
 	ts := httptest.NewServer(mcpserver.NewStreamableHTTPServer(rawMcpServer))
 	t.Cleanup(ts.Close)
@@ -161,11 +161,11 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 		})
 	}
 
-	p, _ := cmd.InitV1Persister(ctx, DB_CONN)
-	d, _ := cmd.InitV1Dispatcher(ctx)
-	i, _ := cmd.InitV1Interpreter(ctx, "", "")
-	e, _ := cmd.InitEmbedder(ctx, "", "")
-	f, _ := cmd.InitV1Filer(
+	p, _ := app.InitV1Persister(ctx, DB_CONN)
+	d, _ := app.InitV1Dispatcher(ctx)
+	i, _ := app.InitV1Interpreter(ctx, "", "")
+	e, _ := app.InitEmbedder(ctx, "", "")
+	f, _ := app.InitV1Filer(
 		ctx,
 		MINIO_END,
 		MINIO_PUBLIC,
@@ -182,7 +182,7 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 
 	go func() { workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "worker") }()
 
-	r, _ := cmd.RegisterV1HttpHandlers(
+	r, _ := app.RegisterV1HttpHandlers(
 		ctx,
 		spaceSvc,
 		sessSvc,
