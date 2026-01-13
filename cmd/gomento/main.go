@@ -25,7 +25,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.20.0"
 )
 
-type cli struct {
+type CLI struct {
 	Mode    string `env:"MODE" default:""`
 	Name    string `env:"NAME" default:"gomento"`
 	Version string `env:"VERSION" default:"v0.1.0"`
@@ -51,7 +51,7 @@ type cli struct {
 
 type RunAllCmd struct{}
 
-func (c *RunAllCmd) Run(cli *cli) error {
+func (c *RunAllCmd) Run(cli *CLI) error {
 	ctx := context.Background()
 
 	// resource
@@ -128,35 +128,19 @@ func (c *RunAllCmd) Run(cli *cli) error {
 	if cli.Mode == "" || cli.Mode == "worker" {
 		slog.InfoContext(ctx, "initiating worker")
 
-		p, err := app.InitV1Persister(ctx, cli.PersisterLocation)
-		if err != nil {
-			return err
-		}
+		var err error
 
-		i, err := app.InitV1Interpreter(
+		workerService, err = app.InitV1Worker(
 			ctx,
+			disp,
+			cli.PersisterLocation,
 			cli.OpenAIAPIKey,
 			cli.InterpreterModel,
-		)
-		if err != nil {
-			return err
-		}
-
-		e, err := app.InitEmbedder(
-			ctx,
-			cli.OpenAIAPIKey,
 			cli.EmbedderModel,
 		)
 		if err != nil {
 			return err
 		}
-
-		workerService = v1workerservice.NewV1Service(
-			p,
-			disp,
-			i,
-			e,
-		)
 		stopChannels["worker"] = make(chan struct{})
 	}
 
@@ -168,13 +152,41 @@ func (c *RunAllCmd) Run(cli *cli) error {
 	if cli.Mode == "" || cli.Mode == "server" {
 		slog.InfoContext(ctx, "initiating mcp & http servers")
 
-		p, err := app.InitV1Persister(ctx, cli.PersisterLocation)
+		var err error
+
+		spaceService, err = app.InitV1SpaceService(
+			ctx,
+			cli.PersisterLocation,
+			cli.OpenAIAPIKey,
+			cli.EmbedderModel,
+		)
 		if err != nil {
 			return err
 		}
+		stopChannels["space"] = make(chan struct{})
 
-		f, err := app.InitV1Filer(
+		sessionService, err = app.InitV1SessionService(
 			ctx,
+			disp,
+			cli.PersisterLocation,
+			cli.FilerEndpoint,
+			cli.FilerPublicEndpoint,
+			cli.FilerRegion,
+			cli.FilerContainer,
+			cli.FilerUser,
+			cli.FilerPassword,
+			cli.OpenAIAPIKey,
+			cli.EmbedderModel,
+			cli.QName,
+		)
+		if err != nil {
+			return err
+		}
+		stopChannels["session"] = make(chan struct{})
+
+		fileService, err = app.InitV1FileService(
+			ctx,
+			cli.PersisterLocation,
 			cli.FilerEndpoint,
 			cli.FilerPublicEndpoint,
 			cli.FilerRegion,
@@ -185,30 +197,6 @@ func (c *RunAllCmd) Run(cli *cli) error {
 		if err != nil {
 			return err
 		}
-
-		e, err := app.InitEmbedder(
-			ctx,
-			cli.OpenAIAPIKey,
-			cli.EmbedderModel,
-		)
-		if err != nil {
-			return err
-		}
-
-		spaceService = v1spaceservice.NewV1Service(p, e)
-		stopChannels["space"] = make(chan struct{})
-		sessionService = v1sessionservice.NewV1Service(
-			p,
-			disp,
-			f,
-			e,
-			cli.QName,
-		)
-		stopChannels["session"] = make(chan struct{})
-		fileService = v1fileservice.NewV1Service(
-			p,
-			f,
-		)
 		stopChannels["file"] = make(chan struct{})
 
 		mcpServer, err = app.InitV1McpServer(
@@ -220,6 +208,9 @@ func (c *RunAllCmd) Run(cli *cli) error {
 			sessionService,
 			fileService,
 		)
+		if err != nil {
+			return err
+		}
 		stopChannels["mcpserver"] = make(chan struct{})
 
 		httpServer, err = app.InitV1HttpServer(
@@ -229,6 +220,9 @@ func (c *RunAllCmd) Run(cli *cli) error {
 			sessionService,
 			fileService,
 		)
+		if err != nil {
+			return err
+		}
 		stopChannels["httpserver"] = make(chan struct{})
 	}
 
@@ -330,7 +324,7 @@ func (c *RunAllCmd) Run(cli *cli) error {
 }
 
 func main() {
-	var cli cli
+	var cli CLI
 	ctx := kong.Parse(&cli)
 	err := ctx.Run()
 	ctx.FatalIfErrorf(err)
