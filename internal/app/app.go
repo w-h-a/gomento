@@ -31,6 +31,7 @@ import (
 	v1fileservice "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
 	v1spaceservice "github.com/w-h-a/gomento/internal/service/v1_space"
+	v1workerservice "github.com/w-h-a/gomento/internal/service/v1_worker"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -127,6 +128,163 @@ func InitV1Filer(
 		filer.WithUser(user),
 		filer.WithSecret(password),
 	), nil
+}
+
+func InitV1Worker(
+	ctx context.Context,
+	disp dispatcher.V1Dispatcher,
+	persisterLocation string,
+	openAIAPIKey string,
+	interpreterModel string,
+	embedderModel string,
+) (*v1workerservice.V1Service, error) {
+	p, err := InitV1Persister(ctx, persisterLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	i, err := InitV1Interpreter(
+		ctx,
+		openAIAPIKey,
+		interpreterModel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	e, err := InitEmbedder(
+		ctx,
+		openAIAPIKey,
+		embedderModel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	workerService := v1workerservice.NewV1Service(
+		p,
+		disp,
+		i,
+		e,
+	)
+
+	return workerService, nil
+}
+
+func InitV1SpaceService(
+	ctx context.Context,
+	persisterLocation string,
+	openAIAPIKey string,
+	embedderModel string,
+) (*v1spaceservice.V1Service, error) {
+	p, err := InitV1Persister(ctx, persisterLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	e, err := InitEmbedder(
+		ctx,
+		openAIAPIKey,
+		embedderModel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	spaceService := v1spaceservice.NewV1Service(
+		p,
+		e,
+	)
+
+	return spaceService, nil
+}
+
+func InitV1SessionService(
+	ctx context.Context,
+	disp dispatcher.V1Dispatcher,
+	persisterLocation string,
+	filerEndpoint string,
+	filerPublicEndpoint string,
+	filerRegion string,
+	filerContainer string,
+	filerUser string,
+	filerPassword string,
+	openAIAPIKey string,
+	embedderModel string,
+	qName string,
+) (*v1sessionservice.V1Service, error) {
+	p, err := InitV1Persister(ctx, persisterLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := InitV1Filer(
+		ctx,
+		filerEndpoint,
+		filerPublicEndpoint,
+		filerRegion,
+		filerContainer,
+		filerUser,
+		filerPassword,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	e, err := InitEmbedder(
+		ctx,
+		openAIAPIKey,
+		embedderModel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	sessionService := v1sessionservice.NewV1Service(
+		p,
+		disp,
+		f,
+		e,
+		qName,
+	)
+
+	return sessionService, nil
+}
+
+func InitV1FileService(
+	ctx context.Context,
+	persisterLocation string,
+	filerEndpoint string,
+	filerPublicEndpoint string,
+	filerRegion string,
+	filerContainer string,
+	filerUser string,
+	filerPassword string,
+) (*v1fileservice.V1Service, error) {
+	p, err := InitV1Persister(ctx, persisterLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := InitV1Filer(
+		ctx,
+		filerEndpoint,
+		filerPublicEndpoint,
+		filerRegion,
+		filerContainer,
+		filerUser,
+		filerPassword,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	filerService := v1fileservice.NewV1Service(
+		p,
+		f,
+	)
+
+	return filerService, nil
 }
 
 // TODO: accept user configuration
