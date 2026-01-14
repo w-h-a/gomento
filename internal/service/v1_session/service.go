@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +15,9 @@ import (
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
 	"github.com/w-h-a/gomento/internal/util"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -28,28 +32,50 @@ type V1Service struct {
 	dispatcher dispatcher.V1Dispatcher
 	filer      filer.V1Filer
 	embedder   embedder.Embedder
+	tracer     trace.Tracer
 	qname      string
 }
 
 func (s *V1Service) Create(ctx context.Context, spaceId *uuid.UUID) (*v1.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "session.Create")
+	defer span.End()
+
 	p := &v1.Session{
 		Id:      uuid.New(),
 		SpaceId: spaceId,
 	}
+
+	span.SetAttributes(attribute.String("session.id", p.Id.String()))
+	if spaceId != nil {
+		span.SetAttributes(attribute.String("space.id", spaceId.String()))
+	}
+
 	if err := s.persister.CreateSession(ctx, p); err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
+
 	return p, nil
 }
 
 func (s *V1Service) ListSessions(ctx context.Context, in ListSessionsInput) (*ListSessionsOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "session.ListSessions")
+	defer span.End()
+
+	if in.SpaceId != nil {
+		span.SetAttributes(attribute.String("space.id", in.SpaceId.String()))
+	}
+
 	sessions, err := s.persister.ListSessions(
 		ctx,
 		in.SpaceId,
 	)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.Int("result.count", len(sessions)))
 
 	return &ListSessionsOutput{
 		Items: sessions,
@@ -57,19 +83,35 @@ func (s *V1Service) ListSessions(ctx context.Context, in ListSessionsInput) (*Li
 }
 
 func (s *V1Service) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "session.GetSession")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("session.id", id.String()))
+
 	sess, err := s.persister.GetSession(ctx, id)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 	if sess == nil {
 		return nil, service.ErrSessionNotFound
 	}
+
 	return sess, nil
 }
 
 func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spaceId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "session.ConnectToSpace")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("session.id", sessionId.String()),
+		attribute.String("space.id", spaceId.String()),
+	)
+
 	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	if sess == nil {
@@ -78,6 +120,7 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spa
 
 	space, err := s.persister.GetSpace(ctx, spaceId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	if space == nil {
@@ -90,6 +133,16 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, sessionId uuid.UUID, spa
 }
 
 func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Message, error) {
+	ctx, span := s.tracer.Start(ctx, "session.AddMessage")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("session.id", in.SessionId.String()),
+		attribute.String("message.role", in.Role),
+		attribute.Int("message.parts_count", len(in.Parts)),
+		attribute.Int("message.files_count", len(in.Files)),
+	)
+
 	assets := map[int]*v1.Asset{}
 	finalParts := []v1.Part{}
 
@@ -110,12 +163,16 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		}
 
 		if len(pIn.FileField) == 0 {
-			return nil, fmt.Errorf("part type %s missing file_field", pIn.Type)
+			err := fmt.Errorf("part type %s missing file_field", pIn.Type)
+			span.RecordError(err)
+			return nil, err
 		}
 
 		inputFile, ok := in.Files[pIn.FileField]
 		if !ok {
-			return nil, fmt.Errorf("file %s not found", pIn.FileField)
+			err := fmt.Errorf("file %s not found", pIn.FileField)
+			span.RecordError(err)
+			return nil, err
 		}
 
 		asset, err := s.filer.UploadReader(
@@ -126,6 +183,7 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			inputFile.Size,
 		)
 		if err != nil {
+			span.RecordError(err)
 			return nil, fmt.Errorf("upload failed: %w", err)
 		}
 
@@ -139,15 +197,16 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		finalParts = append(finalParts, domainPart)
 	}
 
-	fullText := ""
+	var fullText strings.Builder
 	for _, part := range finalParts {
 		if part.Type == "text" {
-			fullText += part.Text + "\n"
+			fullText.WriteString(part.Text + "\n")
 		}
 	}
 
-	vec, err := s.embedder.Embed(ctx, fullText)
+	vec, err := s.embedder.Embed(ctx, fullText.String())
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
@@ -160,13 +219,25 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 	}
 
 	if err := s.persister.CreateMessageWithAssets(ctx, msg, assets); err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.String("message.id", msg.Id.String()))
 
 	return msg, nil
 }
 
 func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*ListMessagesOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "session.ListMessages")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("session.id", in.SessionId.String()),
+		attribute.Int("limit", in.Limit),
+		attribute.Bool("with_cursor", len(in.Cursor) > 0),
+	)
+
 	var afterT time.Time
 	var afterId uuid.UUID
 	var err error
@@ -174,6 +245,7 @@ func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*Li
 	if len(in.Cursor) > 0 {
 		afterT, afterId, err = util.DecodeCursor(in.Cursor)
 		if err != nil {
+			span.RecordError(err)
 			return nil, fmt.Errorf("failed to decode cursor: %w", err)
 		}
 	}
@@ -195,8 +267,11 @@ func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*Li
 		persister.WithAfterId(afterId),
 	)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.Int("result.count", len(msgs)))
 
 	out := &ListMessagesOutput{
 		Items:   msgs,
@@ -227,12 +302,14 @@ func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*Li
 
 	assets, err := s.persister.GetAssets(ctx, assetIds)
 	if err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("failed to fetch assets: %w", err)
 	}
 
 	for id, asset := range assets {
 		url, err := s.filer.PresignGet(ctx, asset.Path, assetPublicUrlExpire)
 		if err != nil {
+			span.RecordError(err)
 			return nil, fmt.Errorf("presign failed for asset %s: %w", id, err)
 		}
 		out.PublicUrls[id] = PublicUrl{
@@ -245,8 +322,17 @@ func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*Li
 }
 
 func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTasksOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "session.ListTasks")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("session.id", in.SessionId.String()))
+	if in.Status != nil {
+		span.SetAttributes(attribute.String("status", *in.Status))
+	}
+
 	sess, err := s.persister.GetSession(ctx, in.SessionId)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
@@ -256,14 +342,15 @@ func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTask
 
 	tasks, err := s.persister.FetchCurrentTasks(ctx, in.SessionId, in.Status)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
-	out := &ListTasksOutput{
-		Items: tasks,
-	}
+	span.SetAttributes(attribute.Int("result.count", len(tasks)))
 
-	return out, nil
+	return &ListTasksOutput{
+		Items: tasks,
+	}, nil
 }
 
 func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID) error {
@@ -275,12 +362,16 @@ func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID) error
 }
 
 func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, scope string) error {
+	ctx, span := s.tracer.Start(ctx, "session.dispatchJob")
+	defer span.End()
+
 	payload := v1.JobPayload{
 		SessionId: sessionId,
 	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
@@ -291,7 +382,14 @@ func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, scope 
 		Status:  v1.JobStatusPending,
 	}
 
+	span.SetAttributes(
+		attribute.String("session.id", sessionId.String()),
+		attribute.String("job.id", job.Id.String()),
+		attribute.String("job.type", scope),
+	)
+
 	if err := s.persister.CreateJob(ctx, job); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to persist job: %w", err)
 	}
 
@@ -312,6 +410,7 @@ func NewV1Service(
 		dispatcher: d,
 		filer:      f,
 		embedder:   e,
+		tracer:     otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_session"),
 		qname:      qname,
 	}
 }
