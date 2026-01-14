@@ -41,7 +41,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusCreated, s)
 }
 
-func (h *v1Handler) ListSpaces(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -54,7 +54,7 @@ func (h *v1Handler) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) GetSpace(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 

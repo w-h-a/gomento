@@ -53,7 +53,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusCreated, s)
 }
 
-func (h *v1Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -78,7 +78,7 @@ func (h *v1Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) GetSession(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -254,25 +254,6 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
-	vars := mux.Vars(r)
-	id, err := uuid.Parse(vars["session_id"])
-	if err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
-		return
-	}
-
-	if err := h.service.ExtractTasks(ctx, id); err != nil {
-		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "extraction_initiated"})
-}
-
 func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
@@ -303,6 +284,25 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, out)
+}
+
+func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
+	traceId := httphandler.GetTraceId(r)
+	ctx := util.WithTraceId(r.Context(), traceId)
+
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["session_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
+		return
+	}
+
+	if err := h.service.ExtractTasks(ctx, id); err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "extraction_initiated"})
 }
 
 func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {

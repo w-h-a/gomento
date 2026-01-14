@@ -17,7 +17,7 @@ type v1Handler struct {
 	service *v1file.V1Service
 }
 
-func (h *v1Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -45,7 +45,7 @@ func (h *v1Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		logicPath = "/"
 	}
 
-	f, err := h.service.UploadFile(ctx, v1file.CreateFileInput{
+	f, err := h.service.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  sid,
 		Path:     logicPath,
 		Filename: header.Filename,
@@ -61,7 +61,7 @@ func (h *v1Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, f)
 }
 
-func (h *v1Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -77,7 +77,7 @@ func (h *v1Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	out, err := h.service.ListFiles(ctx, v1file.ListFilesInput{
+	out, err := h.service.List(ctx, v1file.ListFilesInput{
 		SpaceId:    sid,
 		PathPrefix: pathPrefix,
 	})
@@ -89,7 +89,7 @@ func (h *v1Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {
+func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
@@ -102,7 +102,7 @@ func (h *v1Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 
 	withUrl := r.URL.Query().Get("with_url") == "true"
 
-	file, url, err := h.service.GetFile(ctx, id, withUrl)
+	file, url, err := h.service.Get(ctx, id, withUrl)
 	if err != nil {
 		if errors.Is(err, service.ErrFileNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "File not found")

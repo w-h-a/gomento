@@ -30,7 +30,7 @@ func TestUploadFile_Global(t *testing.T) {
 
 	// 2. Act
 	content := "global config"
-	file, err := s.UploadFile(ctx, v1file.CreateFileInput{
+	file, err := s.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  nil,
 		Path:     "/etc",
 		Filename: "config.yaml",
@@ -69,7 +69,7 @@ func TestUploadFile_Space(t *testing.T) {
 
 	// Act
 	content := "space config"
-	file, err := s.UploadFile(ctx, v1file.CreateFileInput{
+	file, err := s.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  &spaceId,
 		Path:     "/etc",
 		Filename: "config.yaml",
@@ -101,7 +101,7 @@ func TestUploadFile_Upserts(t *testing.T) {
 
 	// 1. First Upload
 	content1 := "v1"
-	file1, err := s.UploadFile(ctx, v1file.CreateFileInput{
+	file1, err := s.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  nil,
 		Path:     "/",
 		Filename: "config.yaml",
@@ -112,7 +112,7 @@ func TestUploadFile_Upserts(t *testing.T) {
 
 	// 2. Second Upload (Same Path/Filename)
 	content2 := "v2"
-	file2, err := s.UploadFile(ctx, v1file.CreateFileInput{
+	file2, err := s.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  nil,
 		Path:     "/",
 		Filename: "config.yaml",
@@ -157,7 +157,7 @@ func TestListFiles_FiltersByScope(t *testing.T) {
 	}, &v1.Asset{Id: uuid.New()})
 
 	// Act 1: List Global
-	globalOut, err := s.ListFiles(ctx, v1file.ListFilesInput{SpaceId: nil})
+	globalOut, err := s.List(ctx, v1file.ListFilesInput{SpaceId: nil})
 	require.NoError(t, err)
 
 	// Assert
@@ -165,7 +165,7 @@ func TestListFiles_FiltersByScope(t *testing.T) {
 	assert.Equal(t, "global.txt", globalOut.Items[0].Filename)
 
 	// Act 2: List Space
-	spaceOut, err := s.ListFiles(ctx, v1file.ListFilesInput{SpaceId: &spaceId})
+	spaceOut, err := s.List(ctx, v1file.ListFilesInput{SpaceId: &spaceId})
 	require.NoError(t, err)
 
 	// Assert
@@ -198,7 +198,7 @@ func TestListFiles_FiltersByPath(t *testing.T) {
 	}, &v1.Asset{Id: uuid.New()})
 
 	// Act: Filter by path "src/"
-	out, err := s.ListFiles(ctx, v1file.ListFilesInput{
+	out, err := s.List(ctx, v1file.ListFilesInput{
 		SpaceId:    &spaceId,
 		PathPrefix: "src",
 	})
@@ -238,7 +238,7 @@ func TestGetFile_ById(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act: Get without URL
-	file, url, err := s.GetFile(ctx, fileId, false)
+	file, url, err := s.Get(ctx, fileId, false)
 	require.NoError(t, err)
 
 	// Assert
@@ -247,7 +247,7 @@ func TestGetFile_ById(t *testing.T) {
 	assert.Empty(t, url, "URL should be empty when withUrl is false")
 
 	// Act: Get with URL
-	file, url, err = s.GetFile(ctx, fileId, true)
+	file, url, err = s.Get(ctx, fileId, true)
 	require.NoError(t, err)
 
 	// Assert
