@@ -52,7 +52,7 @@ func (h *v1Handler) create(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	return mcp.NewToolResultJSON(s)
 }
 
-func (h *v1Handler) ListSpacesTool() server.ServerTool {
+func (h *v1Handler) ListTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "list_spaces",
@@ -61,11 +61,11 @@ func (h *v1Handler) ListSpacesTool() server.ServerTool {
 				Type: "object",
 			},
 		},
-		Handler: h.listSpaces,
+		Handler: h.list,
 	}
 }
 
-func (h *v1Handler) listSpaces(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *v1Handler) list(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
 	out, err := h.service.List(ctx)
@@ -76,7 +76,7 @@ func (h *v1Handler) listSpaces(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultJSON(out)
 }
 
-func (h *v1Handler) GetSpaceTool() server.ServerTool {
+func (h *v1Handler) GetTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "get_space",
@@ -89,11 +89,11 @@ func (h *v1Handler) GetSpaceTool() server.ServerTool {
 				Required: []string{"space_id"},
 			},
 		},
-		Handler: h.getSpace,
+		Handler: h.get,
 	}
 }
 
-func (h *v1Handler) getSpace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *v1Handler) get(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
 	args, ok := req.Params.Arguments.(map[string]any)

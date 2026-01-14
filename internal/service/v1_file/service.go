@@ -21,7 +21,7 @@ type V1Service struct {
 	filer     filer.V1Filer
 }
 
-func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.File, error) {
+func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, error) {
 	asset, err := s.filer.UploadReader(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
 	if err != nil {
 		return nil, err
@@ -46,6 +46,41 @@ func (s *V1Service) UploadFile(ctx context.Context, in CreateFileInput) (*v1.Fil
 	return file, nil
 }
 
+func (s *V1Service) List(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {
+	fs, err := s.persister.ListFiles(
+		ctx,
+		in.SpaceId,
+		persister.WithPathPrefix(in.PathPrefix),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ListFilesOutput{
+		Items: fs,
+	}, nil
+}
+
+func (s *V1Service) Get(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.File, string, error) {
+	file, err := s.persister.GetFile(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	if file == nil {
+		return nil, "", service.ErrFileNotFound
+	}
+
+	var url string
+	if withUrl && file.Asset != nil {
+		url, err = s.filer.PresignGet(ctx, file.Asset.Path, assetPublicUrlExpire)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	return file, url, nil
+}
+
 func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceId uuid.UUID) error {
 	file, err := s.persister.GetFile(ctx, fileId)
 	if err != nil {
@@ -66,41 +101,6 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceI
 	file.SpaceId = &spaceId
 
 	return s.persister.UpdateFileSpace(ctx, file)
-}
-
-func (s *V1Service) ListFiles(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {
-	fs, err := s.persister.ListFiles(
-		ctx,
-		in.SpaceId,
-		persister.WithPathPrefix(in.PathPrefix),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &ListFilesOutput{
-		Items: fs,
-	}, nil
-}
-
-func (s *V1Service) GetFile(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.File, string, error) {
-	file, err := s.persister.GetFile(ctx, id)
-	if err != nil {
-		return nil, "", err
-	}
-	if file == nil {
-		return nil, "", service.ErrFileNotFound
-	}
-
-	var url string
-	if withUrl && file.Asset != nil {
-		url, err = s.filer.PresignGet(ctx, file.Asset.Path, assetPublicUrlExpire)
-		if err != nil {
-			return nil, "", err
-		}
-	}
-
-	return file, url, nil
 }
 
 func NewV1Service(p persister.V1Persister, f filer.V1Filer) *V1Service {

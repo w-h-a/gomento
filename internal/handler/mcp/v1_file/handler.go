@@ -16,7 +16,7 @@ type v1Handler struct {
 	service *v1file.V1Service
 }
 
-func (h *v1Handler) UploadFileTool() server.ServerTool {
+func (h *v1Handler) UploadTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "upload_file",
@@ -32,11 +32,11 @@ func (h *v1Handler) UploadFileTool() server.ServerTool {
 				Required: []string{"filename", "content"},
 			},
 		},
-		Handler: h.uploadFile,
+		Handler: h.upload,
 	}
 }
 
-func (h *v1Handler) uploadFile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *v1Handler) upload(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
 	args, ok := req.Params.Arguments.(map[string]any)
@@ -72,7 +72,7 @@ func (h *v1Handler) uploadFile(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError("missing file 'content'"), nil
 	}
 
-	f, err := h.service.UploadFile(ctx, v1file.CreateFileInput{
+	f, err := h.service.Upload(ctx, v1file.CreateFileInput{
 		SpaceId:  sid,
 		Path:     path,
 		Filename: filename,
@@ -87,7 +87,7 @@ func (h *v1Handler) uploadFile(ctx context.Context, req mcp.CallToolRequest) (*m
 	return mcp.NewToolResultJSON(f)
 }
 
-func (h *v1Handler) ListFilesTool() server.ServerTool {
+func (h *v1Handler) ListTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "list_files",
@@ -100,11 +100,11 @@ func (h *v1Handler) ListFilesTool() server.ServerTool {
 				},
 			},
 		},
-		Handler: h.listFiles,
+		Handler: h.list,
 	}
 }
 
-func (h *v1Handler) listFiles(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *v1Handler) list(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
 	args, ok := req.Params.Arguments.(map[string]any)
@@ -126,7 +126,7 @@ func (h *v1Handler) listFiles(ctx context.Context, req mcp.CallToolRequest) (*mc
 		pathPrefix = p
 	}
 
-	out, err := h.service.ListFiles(ctx, v1file.ListFilesInput{
+	out, err := h.service.List(ctx, v1file.ListFilesInput{
 		SpaceId:    sid,
 		PathPrefix: pathPrefix,
 	})
@@ -137,7 +137,7 @@ func (h *v1Handler) listFiles(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return mcp.NewToolResultJSON(out)
 }
 
-func (h *v1Handler) GetFileTool() server.ServerTool {
+func (h *v1Handler) GetTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{
 			Name:        "get_file",
@@ -151,11 +151,11 @@ func (h *v1Handler) GetFileTool() server.ServerTool {
 				Required: []string{"file_id"},
 			},
 		},
-		Handler: h.getFile,
+		Handler: h.get,
 	}
 }
 
-func (h *v1Handler) getFile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+func (h *v1Handler) get(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
 	args, ok := req.Params.Arguments.(map[string]any)
@@ -178,7 +178,7 @@ func (h *v1Handler) getFile(ctx context.Context, req mcp.CallToolRequest) (*mcp.
 		withUrl = u
 	}
 
-	file, url, err := h.service.GetFile(ctx, id, withUrl)
+	file, url, err := h.service.Get(ctx, id, withUrl)
 	if err != nil {
 		if errors.Is(err, service.ErrFileNotFound) {
 			return mcp.NewToolResultError("file not found"), nil
