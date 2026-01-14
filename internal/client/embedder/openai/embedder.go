@@ -3,10 +3,12 @@ package openai
 import (
 	"context"
 	"log/slog"
+	"net/http"
 
 	"github.com/tmc/langchaingo/embeddings"
 	"github.com/tmc/langchaingo/llms/openai"
 	"github.com/w-h-a/gomento/internal/client/embedder"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 type openaiEmbedder struct {
@@ -28,6 +30,9 @@ func NewEmbedder(opts ...embedder.Option) embedder.Embedder {
 	llmOpts := []openai.Option{
 		openai.WithToken(options.ApiKey),
 		openai.WithModel(options.Model),
+		openai.WithHTTPClient(&http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}),
 	}
 
 	llm, err := openai.New(llmOpts...)

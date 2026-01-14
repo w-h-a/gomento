@@ -5,20 +5,30 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/tmc/langchaingo/llms"
 	"github.com/tmc/langchaingo/llms/openai"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
+	"github.com/w-h-a/gomento/internal/util"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type v1OpenaiInterpreter struct {
 	options interpreter.Options
 	llm     llms.Model
+	tracer  trace.Tracer
 }
 
 func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message) (*v1.Skill, error) {
+	ctx, span := d.tracer.Start(ctx, "interpreter.Distill")
+	defer span.End()
+
 	slog.InfoContext(ctx, "distilling session", "message_count", len(history))
 
 	content := []llms.MessageContent{
@@ -32,26 +42,46 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message)
 		llms.WithJSONMode(),
 	)
 	if err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("llm session distillation failed: %w", err)
 	}
 
-	raw := rsp.Choices[0].Content
+	if len(rsp.Choices) == 0 {
+		err := fmt.Errorf("llm returned no choices")
+		span.RecordError(err)
+		return nil, err
+	}
 
-	slog.InfoContext(ctx, "llm response received", "response_length", len(raw))
+	choice := rsp.Choices[0]
+	span.SetAttributes(
+		attribute.String("llm.finish_reason", choice.StopReason),
+		attribute.String("llm.model", d.options.Model),
+		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+	)
+
+	raw := choice.Content
 
 	var result v1.Skill
 	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("failed to parse llm json: %w", err)
 	}
 
 	if len(result.SOP) == 0 || len(result.Trigger) == 0 {
-		return nil, fmt.Errorf("llm returned incomplete data: %s", raw)
+		err := fmt.Errorf("llm returned incomplete data: %s", raw)
+		span.RecordError(err)
+		return nil, err
 	}
 
 	return &result, nil
 }
 
 func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+	ctx, span := d.tracer.Start(ctx, "interpreter.Extract")
+	defer span.End()
+
 	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "current_task_count", len(currentTasks))
 
 	content := []llms.MessageContent{
@@ -66,8 +96,24 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 		llms.WithTemperature(0),
 	)
 	if err != nil {
+		span.RecordError(err)
 		return nil, fmt.Errorf("llm task extraction failed: %w", err)
 	}
+
+	if len(rsp.Choices) == 0 {
+		err := fmt.Errorf("llm returned no choices")
+		span.RecordError(err)
+		return nil, err
+	}
+
+	choice := rsp.Choices[0]
+	span.SetAttributes(
+		attribute.String("llm.finish_reason", choice.StopReason),
+		attribute.String("llm.model", d.options.Model),
+		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+	)
 
 	var actions []interpreter.TaskAction
 	for _, choice := range rsp.Choices {
@@ -103,6 +149,8 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 			})
 		}
 	}
+
+	span.SetAttributes(attribute.Int("interpreter.actions_count", len(actions)))
 
 	return actions, nil
 }
@@ -401,11 +449,15 @@ func NewV1Interpreter(opts ...interpreter.Option) interpreter.V1Interpreter {
 
 	d := &v1OpenaiInterpreter{
 		options: options,
+		tracer:  otel.Tracer("github.com/w-h-a/gomento/internal/client/interpreter/v1_openai"),
 	}
 
 	llmOpts := []openai.Option{
 		openai.WithToken(options.ApiKey),
 		openai.WithModel(options.Model),
+		openai.WithHTTPClient(&http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}),
 	}
 
 	llm, err := openai.New(llmOpts...)
