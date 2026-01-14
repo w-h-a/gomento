@@ -58,8 +58,8 @@ func (s *V1Service) Create(ctx context.Context, spaceId *uuid.UUID) (*v1.Session
 	return p, nil
 }
 
-func (s *V1Service) ListSessions(ctx context.Context, in ListSessionsInput) (*ListSessionsOutput, error) {
-	ctx, span := s.tracer.Start(ctx, "session.ListSessions")
+func (s *V1Service) List(ctx context.Context, in ListSessionsInput) (*ListSessionsOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "session.List")
 	defer span.End()
 
 	if in.SpaceId != nil {
@@ -82,8 +82,8 @@ func (s *V1Service) ListSessions(ctx context.Context, in ListSessionsInput) (*Li
 	}, nil
 }
 
-func (s *V1Service) GetSession(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
-	ctx, span := s.tracer.Start(ctx, "session.GetSession")
+func (s *V1Service) Get(ctx context.Context, id uuid.UUID) (*v1.Session, error) {
+	ctx, span := s.tracer.Start(ctx, "session.Get")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("session.id", id.String()))

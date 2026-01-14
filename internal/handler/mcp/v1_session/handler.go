@@ -92,7 +92,7 @@ func (h *v1Handler) listSessions(ctx context.Context, req mcp.CallToolRequest) (
 		sid = &id
 	}
 
-	out, err := h.service.ListSessions(ctx, v1session.ListSessionsInput{
+	out, err := h.service.List(ctx, v1session.ListSessionsInput{
 		SpaceId: sid,
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func (h *v1Handler) getSession(ctx context.Context, req mcp.CallToolRequest) (*m
 		return mcp.NewToolResultError("invalid session_id"), nil
 	}
 
-	sess, err := h.service.GetSession(ctx, id)
+	sess, err := h.service.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, service.ErrSessionNotFound) {
 			return mcp.NewToolResultError("session not found"), nil

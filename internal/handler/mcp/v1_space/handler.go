@@ -68,7 +68,7 @@ func (h *v1Handler) ListSpacesTool() server.ServerTool {
 func (h *v1Handler) listSpaces(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// TODO: tracing?
 
-	out, err := h.service.ListSpaces(ctx)
+	out, err := h.service.List(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -111,7 +111,7 @@ func (h *v1Handler) getSpace(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		return mcp.NewToolResultError("invalid space_id format"), nil
 	}
 
-	space, err := h.service.GetSpace(ctx, id)
+	space, err := h.service.Get(ctx, id)
 	if err != nil {
 		if err == service.ErrSpaceNotFound {
 			return mcp.NewToolResultError("space not found"), nil

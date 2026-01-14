@@ -67,7 +67,7 @@ func (h *v1Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	out, err := h.service.ListSessions(ctx, v1session.ListSessionsInput{
+	out, err := h.service.List(ctx, v1session.ListSessionsInput{
 		SpaceId: sid,
 	})
 	if err != nil {
@@ -89,7 +89,7 @@ func (h *v1Handler) GetSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.service.GetSession(ctx, id)
+	sess, err := h.service.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, service.ErrSessionNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
