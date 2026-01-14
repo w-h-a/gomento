@@ -45,7 +45,7 @@ func (h *v1Handler) ListSpaces(w http.ResponseWriter, r *http.Request) {
 	traceId := httphandler.GetTraceId(r)
 	ctx := util.WithTraceId(r.Context(), traceId)
 
-	out, err := h.service.ListSpaces(ctx)
+	out, err := h.service.List(ctx)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -65,7 +65,7 @@ func (h *v1Handler) GetSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	space, err := h.service.GetSpace(ctx, id)
+	space, err := h.service.Get(ctx, id)
 	if err != nil {
 		if errors.Is(err, service.ErrSpaceNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Space not found")
