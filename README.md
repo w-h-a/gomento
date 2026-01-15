@@ -13,9 +13,8 @@ GoMento is a high-performance, single-binary sidecar written in **Go**. It accep
 ### Usage
 
 ```bash
-docker compose up
+docker compose -f docker-compose.demo.yml up
 make migrate-up
-go run main.go server
 ```
 
 ### Architecture
