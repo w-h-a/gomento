@@ -9,6 +9,9 @@ import (
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -19,11 +22,27 @@ type V1Service struct {
 	*service.Service
 	persister persister.V1Persister
 	filer     filer.V1Filer
+	tracer    trace.Tracer
 }
 
 func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, error) {
+	ctx, span := s.tracer.Start(ctx, "file.Upload")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("file.filename", in.Filename),
+		attribute.String("file.mime_type", in.MimeType),
+		attribute.Int64("file.size_bytes", in.Size),
+		attribute.String("file.path", in.Path),
+	)
+
+	if in.SpaceId != nil {
+		span.SetAttributes(attribute.String("space.id", in.SpaceId.String()))
+	}
+
 	asset, err := s.filer.UploadReader(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
@@ -38,23 +57,39 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 	}
 
 	if err := s.persister.UpsertFileWithAsset(ctx, file, asset); err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 
 	file.Asset = asset
 
+	span.SetAttributes(attribute.String("file.id", file.Id.String()))
+
 	return file, nil
 }
 
 func (s *V1Service) List(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {
+	ctx, span := s.tracer.Start(ctx, "file.List")
+	defer span.End()
+
+	if in.SpaceId != nil {
+		span.SetAttributes(attribute.String("space.id", in.SpaceId.String()))
+	}
+	if len(in.PathPrefix) > 0 {
+		span.SetAttributes(attribute.String("file.path_prefix", in.PathPrefix))
+	}
+
 	fs, err := s.persister.ListFiles(
 		ctx,
 		in.SpaceId,
 		persister.WithPathPrefix(in.PathPrefix),
 	)
 	if err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
+
+	span.SetAttributes(attribute.Int("result.count", len(fs)))
 
 	return &ListFilesOutput{
 		Items: fs,
@@ -62,8 +97,17 @@ func (s *V1Service) List(ctx context.Context, in ListFilesInput) (*ListFilesOutp
 }
 
 func (s *V1Service) Get(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.File, string, error) {
+	ctx, span := s.tracer.Start(ctx, "file.Get")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("file.id", id.String()),
+		attribute.Bool("with_signed_url", withUrl),
+	)
+
 	file, err := s.persister.GetFile(ctx, id)
 	if err != nil {
+		span.RecordError(err)
 		return nil, "", err
 	}
 	if file == nil {
@@ -74,6 +118,7 @@ func (s *V1Service) Get(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.Fi
 	if withUrl && file.Asset != nil {
 		url, err = s.filer.PresignGet(ctx, file.Asset.Path, assetPublicUrlExpire)
 		if err != nil {
+			span.RecordError(err)
 			return nil, "", err
 		}
 	}
@@ -82,8 +127,17 @@ func (s *V1Service) Get(ctx context.Context, id uuid.UUID, withUrl bool) (*v1.Fi
 }
 
 func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "file.ConnectToSpace")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("file.id", fileId.String()),
+		attribute.String("space.id", spaceId.String()),
+	)
+
 	file, err := s.persister.GetFile(ctx, fileId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	if file == nil {
@@ -92,6 +146,7 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceI
 
 	space, err := s.persister.GetSpace(ctx, spaceId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	if space == nil {
@@ -109,5 +164,6 @@ func NewV1Service(p persister.V1Persister, f filer.V1Filer) *V1Service {
 		Service:   s,
 		persister: p,
 		filer:     f,
+		tracer:    otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_file"),
 	}
 }
