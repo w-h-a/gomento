@@ -32,8 +32,6 @@ func (h *v1Handler) CreateTool() server.ServerTool {
 }
 
 func (h *v1Handler) create(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments"), nil
@@ -66,8 +64,6 @@ func (h *v1Handler) ListTool() server.ServerTool {
 }
 
 func (h *v1Handler) list(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	out, err := h.service.List(ctx)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -94,8 +90,6 @@ func (h *v1Handler) GetTool() server.ServerTool {
 }
 
 func (h *v1Handler) get(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments"), nil
@@ -141,8 +135,6 @@ func (h *v1Handler) SearchSkillsTool() server.ServerTool {
 }
 
 func (h *v1Handler) searchSkills(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments"), nil
@@ -190,8 +182,6 @@ func (h *v1Handler) SearchMessagesTool() server.ServerTool {
 }
 
 func (h *v1Handler) searchMessages(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments"), nil

@@ -35,8 +35,6 @@ func (h *v1Handler) CreateTool() server.ServerTool {
 }
 
 func (h *v1Handler) create(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -76,8 +74,6 @@ func (h *v1Handler) ListTool() server.ServerTool {
 }
 
 func (h *v1Handler) list(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -122,8 +118,6 @@ func (h *v1Handler) GetTool() server.ServerTool {
 }
 
 func (h *v1Handler) get(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -172,8 +166,6 @@ func (h *v1Handler) ConnectToSpaceTool() server.ServerTool {
 }
 
 func (h *v1Handler) connectToSpace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -254,8 +246,6 @@ func (h *v1Handler) AddMessageTool() server.ServerTool {
 }
 
 func (h *v1Handler) addMessage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -347,8 +337,6 @@ func (h *v1Handler) ListMessagesTool() server.ServerTool {
 }
 
 func (h *v1Handler) listMessages(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -416,8 +404,6 @@ func (h *v1Handler) ListTasksTool() server.ServerTool {
 }
 
 func (h *v1Handler) listTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -472,8 +458,6 @@ func (h *v1Handler) ExtractTasksTool() server.ServerTool {
 }
 
 func (h *v1Handler) extractTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -514,8 +498,6 @@ func (h *v1Handler) DistillSkillTool() server.ServerTool {
 }
 
 func (h *v1Handler) distillSkill(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: traces?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil

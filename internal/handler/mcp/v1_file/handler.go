@@ -37,8 +37,6 @@ func (h *v1Handler) UploadTool() server.ServerTool {
 }
 
 func (h *v1Handler) upload(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -105,8 +103,6 @@ func (h *v1Handler) ListTool() server.ServerTool {
 }
 
 func (h *v1Handler) list(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -156,8 +152,6 @@ func (h *v1Handler) GetTool() server.ServerTool {
 }
 
 func (h *v1Handler) get(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil
@@ -216,8 +210,6 @@ func (h *v1Handler) ConnectToSpaceTool() server.ServerTool {
 }
 
 func (h *v1Handler) connectToSpace(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	// TODO: tracing?
-
 	args, ok := req.Params.Arguments.(map[string]any)
 	if !ok {
 		return mcp.NewToolResultError("invalid args"), nil

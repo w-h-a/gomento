@@ -10,7 +10,6 @@ import (
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
 	"github.com/w-h-a/gomento/internal/service"
 	v1space "github.com/w-h-a/gomento/internal/service/v1_space"
-	"github.com/w-h-a/gomento/internal/util"
 )
 
 type v1Handler struct {
@@ -18,9 +17,6 @@ type v1Handler struct {
 }
 
 func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	defer r.Body.Close()
 
 	var req struct {
@@ -32,7 +28,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s, err := h.service.Create(ctx, req.Name)
+	s, err := h.service.Create(r.Context(), req.Name)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -42,10 +38,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
-	out, err := h.service.List(ctx)
+	out, err := h.service.List(r.Context())
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -55,9 +48,6 @@ func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["space_id"])
 	if err != nil {
@@ -65,7 +55,7 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	space, err := h.service.Get(ctx, id)
+	space, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, service.ErrSpaceNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Space not found")
@@ -79,9 +69,6 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["space_id"])
 	if err != nil {
@@ -91,7 +78,7 @@ func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query().Get("q")
 
-	skills, err := h.service.SearchSkills(ctx, id, q)
+	skills, err := h.service.SearchSkills(r.Context(), id, q)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -101,9 +88,6 @@ func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["space_id"])
 	if err != nil {
@@ -113,7 +97,7 @@ func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query().Get("q")
 
-	msgs, err := h.service.SearchMessages(ctx, id, q)
+	msgs, err := h.service.SearchMessages(r.Context(), id, q)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return

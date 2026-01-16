@@ -61,6 +61,10 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message)
 		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
 	)
 
+	if len(choice.Content) > 0 {
+		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
+	}
+
 	raw := choice.Content
 
 	var result v1.Skill
@@ -114,6 +118,25 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
 		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
 	)
+
+	if len(choice.Content) > 0 {
+		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
+	}
+
+	var toolNames []string
+	var toolArgs []string
+
+	for _, tc := range choice.ToolCalls {
+		toolNames = append(toolNames, tc.FunctionCall.Name)
+		toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
+	}
+
+	if len(toolNames) > 0 {
+		span.SetAttributes(
+			attribute.StringSlice("ai.decision.tools", toolNames),
+			attribute.StringSlice("ai.decision.args", toolArgs),
+		)
+	}
 
 	var actions []interpreter.TaskAction
 	for _, choice := range rsp.Choices {

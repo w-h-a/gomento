@@ -5,10 +5,6 @@ import (
 	"net/http"
 )
 
-func GetTraceId(r *http.Request) string {
-	return r.Header.Get("traceparent")
-}
-
 func WrtJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
