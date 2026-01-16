@@ -14,6 +14,9 @@ import (
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type V1Service struct {
@@ -22,6 +25,7 @@ type V1Service struct {
 	persister   persister.V1Persister
 	interpreter interpreter.V1Interpreter
 	embedder    embedder.Embedder
+	tracer      trace.Tracer
 }
 
 func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Job) error, qname string) error {
@@ -33,29 +37,45 @@ func (s *V1Service) Close(ctx context.Context) error {
 }
 
 func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
+	ctx, span := s.tracer.Start(ctx, "worker.ProcessJob")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("job.id", job.Id.String()),
+		attribute.String("job.type", job.Type),
+	)
+
 	if err := s.persister.AcquireJobLock(ctx, job.Id); err != nil {
 		if errors.Is(err, persister.ErrJobLocked) {
 			slog.WarnContext(ctx, "job locked", "job_id", job.Id)
+			span.AddEvent("job_locked")
 			return nil
 		}
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		span.RecordError(err)
 		return fmt.Errorf("failed to acquire job lock: %w", err)
 	}
 
 	if job.Type != v1.JobTypeDistill && job.Type != v1.JobTypeExtract {
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-		return fmt.Errorf("unknown job type: %s", job.Type)
+		err := fmt.Errorf("unknown job type: %s", job.Type)
+		span.RecordError(err)
+		return err
 	}
 
 	var payload v1.JobPayload
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		span.RecordError(err)
 		return fmt.Errorf("invalid job payload: %w", err)
 	}
 
-	if err := s.extract(ctx, payload.SessionId); err != nil {
-		if job.Type == v1.JobTypeExtract {
+	span.SetAttributes(attribute.String("session.id", payload.SessionId.String()))
+
+	if job.Type == v1.JobTypeExtract {
+		if err := s.extract(ctx, payload.SessionId); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
 			return err
 		}
 	}
@@ -63,22 +83,28 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	if job.Type == v1.JobTypeDistill {
 		if err := s.distill(ctx, payload.SessionId); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
 			return err
 		}
 	}
 
 	slog.InfoContext(ctx, "job success", "job_id", job.Id)
+	span.AddEvent("job_success")
+
 	return s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusSuccess)
 }
 
 func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "worker.extract")
+	defer span.End()
+
 	maxIterations := 3
 
 	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
-
 	if sess == nil {
 		return fmt.Errorf("session %v not found", sessionId)
 	}
@@ -87,6 +113,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 
 	globalFiles, err := s.persister.ListFiles(ctx, nil)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	files = append(files, globalFiles...)
@@ -94,24 +121,32 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 	if sess.SpaceId != nil {
 		spaceFiles, err := s.persister.ListFiles(ctx, sess.SpaceId)
 		if err != nil {
+			span.RecordError(err)
 			return err
 		}
 		files = append(files, spaceFiles...)
 	}
 
-	for range maxIterations {
+	for i := range maxIterations {
+		span.AddEvent("extract_iteration_start", trace.WithAttributes(
+			attribute.Int("iteration", i+1),
+		))
+
 		msgs, err := s.persister.ListMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
 		if err != nil {
+			span.RecordError(err)
 			return err
 		}
 
 		tasks, err := s.persister.FetchCurrentTasks(ctx, sessionId, nil)
 		if err != nil {
+			span.RecordError(err)
 			return err
 		}
 
 		actions, err := s.interpreter.Extract(ctx, msgs, files, tasks)
 		if err != nil {
+			span.RecordError(err)
 			return err
 		}
 
@@ -121,9 +156,11 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 
 		for _, action := range actions {
 			if action.Type == interpreter.TaskActionFinish {
+				span.AddEvent("action_finish")
 				return nil
 			}
 			if err := s.executeAction(ctx, sessionId, action, msgs); err != nil {
+				span.RecordError(err)
 				return err
 			}
 		}
@@ -133,6 +170,11 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 }
 
 func (s *V1Service) executeAction(ctx context.Context, sessionId uuid.UUID, action interpreter.TaskAction, msgs []v1.Message) error {
+	ctx, span := s.tracer.Start(ctx, "worker.executeAction")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("action.type", action.Type))
+
 	p := action.Payload
 
 	switch action.Type {
@@ -268,13 +310,17 @@ func (s *V1Service) executeAction(ctx context.Context, sessionId uuid.UUID, acti
 }
 
 func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "worker.distill")
+	defer span.End()
+
 	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
-
 	if sess.SpaceId == nil {
 		slog.InfoContext(ctx, "session has no space, skipping distillation", "session_id", sessionId)
+		span.AddEvent("distill_skipped")
 		return nil
 	}
 
@@ -284,25 +330,34 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
 		persister.WithSort(persister.SortOrderAsc),
 	)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
 	skill, err := s.interpreter.Distill(ctx, msgs)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
+
+	span.SetAttributes(
+		attribute.String("skill.trigger", skill.Trigger),
+		attribute.Int("skill.sop_length", len(skill.SOP)),
+	)
 
 	skill.SpaceId = *sess.SpaceId
 
 	vec, err := s.embedder.Embed(ctx, skill.Trigger)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to embed skill trigger", "error", err)
+		span.RecordError(err)
 		return err
 	}
 
 	skill.Embedding = vec
 
 	slog.InfoContext(ctx, "saving skill", "trigger", skill.Trigger)
+	span.AddEvent("saving_skill")
 
 	return s.persister.SaveSkill(ctx, skill)
 }
@@ -320,5 +375,6 @@ func NewV1Service(
 		dispatcher:  d,
 		interpreter: i,
 		embedder:    e,
+		tracer:      otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_worker"),
 	}
 }
