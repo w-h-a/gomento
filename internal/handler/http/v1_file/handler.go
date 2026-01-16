@@ -10,7 +10,6 @@ import (
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
 	"github.com/w-h-a/gomento/internal/service"
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
-	"github.com/w-h-a/gomento/internal/util"
 )
 
 type v1Handler struct {
@@ -18,9 +17,6 @@ type v1Handler struct {
 }
 
 func (h *v1Handler) Upload(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	defer r.Body.Close()
 
 	var sid *uuid.UUID
@@ -45,7 +41,7 @@ func (h *v1Handler) Upload(w http.ResponseWriter, r *http.Request) {
 		logicPath = "/"
 	}
 
-	f, err := h.service.Upload(ctx, v1file.CreateFileInput{
+	f, err := h.service.Upload(r.Context(), v1file.CreateFileInput{
 		SpaceId:  sid,
 		Path:     logicPath,
 		Filename: header.Filename,
@@ -62,9 +58,6 @@ func (h *v1Handler) Upload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	pathPrefix := r.URL.Query().Get("path_prefix")
 
 	var sid *uuid.UUID
@@ -77,7 +70,7 @@ func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	out, err := h.service.List(ctx, v1file.ListFilesInput{
+	out, err := h.service.List(r.Context(), v1file.ListFilesInput{
 		SpaceId:    sid,
 		PathPrefix: pathPrefix,
 	})
@@ -90,9 +83,6 @@ func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["file_id"])
 	if err != nil {
@@ -102,7 +92,7 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 
 	withUrl := r.URL.Query().Get("with_url") == "true"
 
-	file, url, err := h.service.Get(ctx, id, withUrl)
+	file, url, err := h.service.Get(r.Context(), id, withUrl)
 	if err != nil {
 		if errors.Is(err, service.ErrFileNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "File not found")
@@ -124,9 +114,6 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	fileId, err := uuid.Parse(vars["file_id"])
 	if err != nil {
@@ -148,7 +135,7 @@ func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ConnectToSpace(ctx, fileId, spaceId); err != nil {
+	if err := h.service.ConnectToSpace(r.Context(), fileId, spaceId); err != nil {
 		if errors.Is(err, service.ErrFileNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "File not found")
 			return

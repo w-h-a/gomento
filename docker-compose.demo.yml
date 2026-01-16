@@ -65,6 +65,7 @@ services:
       - "4000:4000"
       - "4001:4001"
     environment:
+      OPENAI_API_KEY: ""
       PERSISTER_LOCATION: "postgres://user:password@postgres:5432/gomento?sslmode=disable"
       FILER_ENDPOINT: "http://minio:9000"
     depends_on:

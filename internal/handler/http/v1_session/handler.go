@@ -20,9 +20,6 @@ type v1Handler struct {
 }
 
 func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	defer r.Body.Close()
 
 	var req struct {
@@ -44,7 +41,7 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	s, err := h.service.Create(ctx, sid)
+	s, err := h.service.Create(r.Context(), sid)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -54,9 +51,6 @@ func (h *v1Handler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	var sid *uuid.UUID
 	if s := r.URL.Query().Get("space_id"); len(s) > 0 {
 		id, err := uuid.Parse(s)
@@ -67,7 +61,7 @@ func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 		sid = &id
 	}
 
-	out, err := h.service.List(ctx, v1session.ListSessionsInput{
+	out, err := h.service.List(r.Context(), v1session.ListSessionsInput{
 		SpaceId: sid,
 	})
 	if err != nil {
@@ -79,9 +73,6 @@ func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -89,7 +80,7 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.service.Get(ctx, id)
+	sess, err := h.service.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, service.ErrSessionNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
@@ -103,9 +94,6 @@ func (h *v1Handler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	sessionId, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -127,7 +115,7 @@ func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ConnectToSpace(ctx, sessionId, sid); err != nil {
+	if err := h.service.ConnectToSpace(r.Context(), sessionId, sid); err != nil {
 		if errors.Is(err, service.ErrSessionNotFound) {
 			httphandler.WrtErr(w, http.StatusNotFound, "Session not found")
 			return
@@ -144,9 +132,6 @@ func (h *v1Handler) ConnectToSpace(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	defer r.Body.Close()
 
 	vars := mux.Vars(r)
@@ -205,7 +190,7 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 		Files:     inputFiles,
 	}
 
-	msg, err := h.service.AddMessage(ctx, input)
+	msg, err := h.service.AddMessage(r.Context(), input)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -215,9 +200,6 @@ func (h *v1Handler) AddMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -236,7 +218,7 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 
 	withPublicUrl := r.URL.Query().Get("with_asset_public_url") == "true"
 
-	out, err := h.service.ListMessages(ctx, v1session.ListMessagesInput{
+	out, err := h.service.ListMessages(r.Context(), v1session.ListMessagesInput{
 		SessionId:          id,
 		Limit:              limit,
 		Cursor:             cursor,
@@ -255,9 +237,6 @@ func (h *v1Handler) ListMessages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -270,7 +249,7 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		status = &s
 	}
 
-	out, err := h.service.ListTasks(ctx, v1session.ListTasksInput{
+	out, err := h.service.ListTasks(r.Context(), v1session.ListTasksInput{
 		SessionId: id,
 		Status:    status,
 	})
@@ -287,9 +266,6 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -297,7 +273,7 @@ func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ExtractTasks(ctx, id); err != nil {
+	if err := h.service.ExtractTasks(r.Context(), id); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -306,9 +282,6 @@ func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {
-	traceId := httphandler.GetTraceId(r)
-	ctx := util.WithTraceId(r.Context(), traceId)
-
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])
 	if err != nil {
@@ -316,7 +289,7 @@ func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DistillSkill(ctx, id); err != nil {
+	if err := h.service.DistillSkill(r.Context(), id); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -25,6 +25,8 @@ import (
 	v1filemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_file"
 	v1sessionmcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_session"
 	v1spacemcphandler "github.com/w-h-a/gomento/internal/handler/mcp/v1_space"
+	tracehttpmiddleware "github.com/w-h-a/gomento/internal/middleware/http/trace"
+	tracemcpmiddleware "github.com/w-h-a/gomento/internal/middleware/mcp/trace"
 	"github.com/w-h-a/gomento/internal/server"
 	httpserver "github.com/w-h-a/gomento/internal/server/http"
 	mcpserver "github.com/w-h-a/gomento/internal/server/mcp"
@@ -301,6 +303,7 @@ func InitV1McpServer(
 		server.WithAddress(addr),
 		server.WithName(name),
 		server.WithVersion(version),
+		mcpserver.WithToolMiddleware(tracemcpmiddleware.Middleware),
 	)
 
 	if err := RegisterV1McpHandlers(ctx, srv, spac, sess, file); err != nil {
@@ -375,6 +378,7 @@ func InitV1HttpServer(
 ) (server.Server, error) {
 	srv := httpserver.NewServer(
 		server.WithAddress(addr),
+		httpserver.WithMiddleware(tracehttpmiddleware.Middleware),
 	)
 
 	v1, err := RegisterV1HttpHandlers(ctx, spac, sess, file)
