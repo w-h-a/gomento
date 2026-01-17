@@ -73,7 +73,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	span.SetAttributes(attribute.String("session.id", payload.SessionId.String()))
 
 	if job.Type == v1.JobTypeExtract {
-		if err := s.extract(ctx, payload.SessionId); err != nil {
+		if err := s.extract(ctx, payload.SessionId, payload.MessageWindow); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 			span.RecordError(err)
 			return err
@@ -81,7 +81,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	}
 
 	if job.Type == v1.JobTypeDistill {
-		if err := s.distill(ctx, payload.SessionId); err != nil {
+		if err := s.distill(ctx, payload.SessionId, payload.MessageWindow); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 			span.RecordError(err)
 			return err
@@ -94,7 +94,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	return s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusSuccess)
 }
 
-func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
+func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
 	ctx, span := s.tracer.Start(ctx, "worker.extract")
 	defer span.End()
 
@@ -127,6 +127,11 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 		files = append(files, spaceFiles...)
 	}
 
+	finalWindow := messageWindow
+	if finalWindow < 1 {
+		finalWindow = 10
+	}
+
 	for i := range maxIterations {
 		span.AddEvent("extract_iteration_start", trace.WithAttributes(
 			attribute.Int("iteration", i+1),
@@ -144,7 +149,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID) error {
 			return err
 		}
 
-		actions, err := s.interpreter.Extract(ctx, msgs, files, tasks)
+		actions, err := s.interpreter.Extract(ctx, msgs, finalWindow, files, tasks)
 		if err != nil {
 			span.RecordError(err)
 			return err
@@ -309,7 +314,7 @@ func (s *V1Service) executeAction(ctx context.Context, sessionId uuid.UUID, acti
 	}
 }
 
-func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
+func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
 	ctx, span := s.tracer.Start(ctx, "worker.distill")
 	defer span.End()
 
@@ -324,6 +329,11 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
 		return nil
 	}
 
+	finalWindow := messageWindow
+	if finalWindow < 1 {
+		finalWindow = 10
+	}
+
 	msgs, err := s.persister.ListMessages(
 		ctx,
 		sessionId,
@@ -334,7 +344,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID) error {
 		return err
 	}
 
-	skill, err := s.interpreter.Distill(ctx, msgs)
+	skill, err := s.interpreter.Distill(ctx, msgs, finalWindow)
 	if err != nil {
 		span.RecordError(err)
 		return err

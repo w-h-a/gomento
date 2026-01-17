@@ -27,7 +27,8 @@ type Job struct {
 }
 
 type JobPayload struct {
-	SessionId uuid.UUID `json:"session_id"`
+	SessionId     uuid.UUID `json:"session_id"`
+	MessageWindow int       `json:"message_window,omitempty"`
 }
 
 type Space struct {

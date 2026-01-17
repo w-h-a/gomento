@@ -245,7 +245,7 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var status *string
-	if s := r.URL.Query().Get("status"); s != "" {
+	if s := r.URL.Query().Get("status"); len(s) > 0 {
 		status = &s
 	}
 
@@ -273,7 +273,14 @@ func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.ExtractTasks(r.Context(), id); err != nil {
+	var messageWindow int
+	if l := r.URL.Query().Get("message_window"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			messageWindow = val
+		}
+	}
+
+	if err := h.service.ExtractTasks(r.Context(), id, messageWindow); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -289,7 +296,14 @@ func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.service.DistillSkill(r.Context(), id); err != nil {
+	var messageWindow int
+	if l := r.URL.Query().Get("message_window"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			messageWindow = val
+		}
+	}
+
+	if err := h.service.DistillSkill(r.Context(), id, messageWindow); err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}

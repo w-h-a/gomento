@@ -448,7 +448,7 @@ func TestFinishSession_Publishes(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	err := s.DistillSkill(ctx, sessionId)
+	err := s.DistillSkill(ctx, sessionId, 1)
 	require.NoError(t, err)
 
 	// Assert: Queue
