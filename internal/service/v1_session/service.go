@@ -353,20 +353,21 @@ func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTask
 	}, nil
 }
 
-func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID) error {
-	return s.dispatchJob(ctx, sessionId, v1.JobTypeExtract)
+func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
+	return s.dispatchJob(ctx, sessionId, messageWindow, v1.JobTypeExtract)
 }
 
-func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID) error {
-	return s.dispatchJob(ctx, sessionId, v1.JobTypeDistill)
+func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
+	return s.dispatchJob(ctx, sessionId, messageWindow, v1.JobTypeDistill)
 }
 
-func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, scope string) error {
+func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, messageWindow int, scope string) error {
 	ctx, span := s.tracer.Start(ctx, "session.dispatchJob")
 	defer span.End()
 
 	payload := v1.JobPayload{
-		SessionId: sessionId,
+		SessionId:     sessionId,
+		MessageWindow: messageWindow,
 	}
 
 	data, err := json.Marshal(payload)
@@ -384,6 +385,7 @@ func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, scope 
 
 	span.SetAttributes(
 		attribute.String("session.id", sessionId.String()),
+		attribute.Int("message.window", messageWindow),
 		attribute.String("job.id", job.Id.String()),
 		attribute.String("job.type", scope),
 	)

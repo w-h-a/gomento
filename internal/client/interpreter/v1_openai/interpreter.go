@@ -25,15 +25,15 @@ type v1OpenaiInterpreter struct {
 	tracer  trace.Tracer
 }
 
-func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message) (*v1.Skill, error) {
+func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int) (*v1.Skill, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Distill")
 	defer span.End()
 
-	slog.InfoContext(ctx, "distilling session", "message_count", len(history))
+	slog.InfoContext(ctx, "distilling session", "message_count", messageWindow)
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.distillSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, messageWindow)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -82,15 +82,15 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message)
 	return &result, nil
 }
 
-func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Extract")
 	defer span.End()
 
-	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "current_task_count", len(currentTasks))
+	slog.InfoContext(ctx, "extracting tasks", "msg_count", messageWindow, "current_task_count", len(currentTasks))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.extractSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, files, currentTasks)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, messageWindow, files, currentTasks)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -204,6 +204,9 @@ You will be given history of a user interacting with an Assistant.
 * If no practical technical knowledge was generated, do not make something up; just return empty JSON
 * SOP must be concise
 * The Trigger must be phrased as a problem statement.
+
+## Output Requirement
+You must "think" before acting. Your response must include a thought process explaining your matching decision for each item.
 `
 }
 
@@ -212,8 +215,9 @@ func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
 
 ## Core Responsibilities
 1. **Task Tracking**: Extract tasks from user-agent sessions.
-2. **Message Matching**: Match messages to existing tasks based on context and content  
-3. **Status Updating**: Update task statuses based on progress and completion signals
+2. **Deduplication**: Prevent creating duplicate tasks for items that already exist.
+3. **Message Matching**: Match messages to existing tasks based on context and content  
+4. **Status Updating**: Update task statuses based on progress and completion signals
 
 ## Task System
 **Structure**: 
@@ -250,6 +254,27 @@ func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
 - Thought messages often consist of user-agent session that clarify what tasks to do next.
 - Append those messages to thoughts instead of tasks.
 
+## Critical Rules for Idempotency
+You will receive "Current Messages" (new context) and "Current Tasks" (database state).
+Your job is to reconcile them.
+
+**STEP 1: Analyze Input**
+For every potential task in "Current Messages", check if it effectively exists in "Current Tasks".
+
+**STEP 2: Fuzzy Matching**
+- Ignore prefixes like "Task A:", "1.", "Step 1:".
+- Ignore minor phrasing differences ("Buy Milk" == "Task A: Buy Milk").
+- If the core intent is the same, IT IS A MATCH.
+- If the task is 'running', 'success', or 'failed', and the user mentions it again, THEY ARE REFERRING TO THE EXISTING TASK.
+
+**STEP 3: Action Selection**
+- **MATCH FOUND?**
+  - **Status Change needed?** (e.g., user says "I'm done") -> Use ` + "`update_task`" + ` (set status='success').
+  - **No Change needed?** (e.g., user says "I'm working on it") -> DO NOTHING. Do not call any tools.
+  - **CRITICAL:** NEVER use ` + "`insert_task`" + ` for a task that matches an existing one.
+- **NO MATCH FOUND?**
+  - Only THEN use ` + "`insert_task`" + ` to create a new 'pending' task.
+
 ## Input Format
 - Input will be markdown-formatted text, with the following sections:
   - ## Current Tasks: existing tasks, their orders, descriptions, and statuses
@@ -257,25 +282,61 @@ func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
   - ## Current Messages: the most recent messages that you need to analyze [with message ids]
   - ## Files: any files attached by the user/agent during the session
 - Message with ID format: <message id=N> ... </message>, inside the tag is the message content, the id field indicates the message id.
+
+## Output Requirement
+You must "think" before acting. Your response must include a thought process explaining your matching decision for each item.
 `
 }
 
-func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message) string {
+func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWindow int) string {
 	var sb strings.Builder
 
 	sb.WriteString("Analyze the following conversation and extract the core automation skill:\n\n")
 
-	for _, msg := range history {
-		for _, part := range msg.Parts {
-			line := d.packMessageLine(msg.Role, part)
-			sb.WriteString(line + "\n")
+	var previousMsgs []v1.Message
+	var currentMsgs []v1.Message
+
+	currentIndexStart := 0
+
+	if len(history) > 0 {
+		if messageWindow < 1 {
+			messageWindow = 10
 		}
+
+		splitIndex := max(len(history)-messageWindow, 0)
+
+		previousMsgs = history[:splitIndex]
+		currentMsgs = history[splitIndex:]
+		currentIndexStart = splitIndex
+	}
+
+	sb.WriteString("\n## Previous Messages:\n")
+	if len(previousMsgs) == 0 {
+		sb.WriteString("(No history)\n")
+	} else {
+		for _, msg := range previousMsgs {
+			var lines []string
+			for _, p := range msg.Parts {
+				lines = append(lines, d.packMessageLine(msg.Role, p))
+			}
+			sb.WriteString(strings.Join(lines, "\n") + "\n")
+		}
+	}
+
+	sb.WriteString("\n## Current Messages:\n")
+	for i, msg := range currentMsgs {
+		var lines []string
+		for _, p := range msg.Parts {
+			lines = append(lines, d.packMessageLine(msg.Role, p))
+		}
+		actualIndex := currentIndexStart + i
+		sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", actualIndex, strings.Join(lines, "\n")))
 	}
 
 	return sb.String()
 }
 
-func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1.File, tasks []v1.Task) string {
+func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, messageWindow int, files []v1.File, tasks []v1.Task) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Tasks:\n")
@@ -300,8 +361,11 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1
 	currentIndexStart := 0
 
 	if len(history) > 0 {
-		// TODO: Replace 1 with dynamic count from Extract caller
-		splitIndex := max(len(history)-1, 0)
+		if messageWindow < 1 {
+			messageWindow = 10
+		}
+
+		splitIndex := max(len(history)-messageWindow, 0)
 
 		previousMsgs = history[:splitIndex]
 		currentMsgs = history[splitIndex:]

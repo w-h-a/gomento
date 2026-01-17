@@ -446,7 +446,8 @@ func (h *v1Handler) ExtractTasksTool() server.ServerTool {
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
-					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to extract tasks for."},
+					"session_id":     map[string]string{"type": "string", "description": "The UUID of the session to extract tasks for."},
+					"message_window": map[string]string{"type": "integer", "description": "The number of recent messages to analyze for task extraction for task tracking within this session (default 10)."},
 				},
 				Required: []string{
 					"session_id",
@@ -473,7 +474,12 @@ func (h *v1Handler) extractTasks(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultError("invalid session_id"), nil
 	}
 
-	if err := h.service.ExtractTasks(ctx, id); err != nil {
+	var messageWindow int
+	if w, ok := args["message_window"].(float64); ok {
+		messageWindow = int(w)
+	}
+
+	if err := h.service.ExtractTasks(ctx, id, messageWindow); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -488,7 +494,8 @@ func (h *v1Handler) DistillSkillTool() server.ServerTool {
 			InputSchema: mcp.ToolInputSchema{
 				Type: "object",
 				Properties: map[string]any{
-					"session_id": map[string]string{"type": "string", "description": "The UUID of the session to distill into a reusable skill."},
+					"session_id":     map[string]string{"type": "string", "description": "The UUID of the session to distill into a reusable skill."},
+					"message_window": map[string]string{"type": "integer", "description": "The number of recent messages to analyze for skill distillation for skill recall across sessions (default 10)."},
 				},
 				Required: []string{"session_id"},
 			},
@@ -513,7 +520,12 @@ func (h *v1Handler) distillSkill(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultError("invalid session_id"), nil
 	}
 
-	if err := h.service.DistillSkill(ctx, id); err != nil {
+	var messageWindow int
+	if w, ok := args["message_window"].(float64); ok {
+		messageWindow = int(w)
+	}
+
+	if err := h.service.DistillSkill(ctx, id, messageWindow); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
