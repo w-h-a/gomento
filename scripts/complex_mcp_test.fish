@@ -219,6 +219,33 @@ curl -s -o /dev/null -X POST "$BASE_URL" \
     }
   }"
 
+echo "⏳ Waiting 5s for background job..."
+sleep 10
+
+# --- STEP 11: VERIFY SKILL (SEMANTIC SEARCH) ---
+echo -e "\n🔎 11. Verifying Skill via Semantic Search..."
+set SEARCH_RESP (curl -s -X POST "$BASE_URL" \
+  -H "Mcp-Session-Id: $SESSION_ID" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"jsonrpc\": \"2.0\", \"id\": 11, \"method\": \"tools/call\",
+    \"params\": {
+      \"name\": \"search_skills\",
+      \"arguments\": {
+        \"space_id\": \"$SPACE_ID\",
+        \"query\": \"how to deploy to production\"
+      }
+    }
+  }")
+
+# Check if we got a hit
+echo $SEARCH_RESP | grep "GitHub tag" > /dev/null
+if test $status -eq 0
+    echo "✅ Success! Found skill containing 'GitHub tag'"
+else
+    echo "❌ Failed. Skill not found in search results."
+    echo "Response: $SEARCH_RESP"
+end
 
 # Cleanup
 rm headers.txt
