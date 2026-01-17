@@ -23,6 +23,8 @@ func (e *openaiEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 func NewEmbedder(opts ...embedder.Option) embedder.Embedder {
 	options := embedder.NewOptions(opts...)
 
+	// TODO: validate options
+
 	e := &openaiEmbedder{
 		options: options,
 	}
