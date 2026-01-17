@@ -114,6 +114,8 @@ func (d *v1MemDispatcher) Queue(name string) <-chan *v1.Job {
 func NewV1Dispatcher(opts ...dispatcher.Option) *v1MemDispatcher {
 	options := dispatcher.NewOptions(opts...)
 
+	// TODO: validate options
+
 	d := &v1MemDispatcher{
 		options: options,
 		queues:  map[string]chan *v1.Job{},

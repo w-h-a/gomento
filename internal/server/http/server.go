@@ -155,6 +155,8 @@ func (s *httpServer) stop(ctx context.Context) error {
 func NewServer(opts ...server.Option) server.Server {
 	options := server.NewOptions(opts...)
 
+	// TODO: validate options
+
 	s := &httpServer{
 		options: options,
 		server:  &http.Server{},
