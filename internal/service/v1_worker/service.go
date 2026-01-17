@@ -164,7 +164,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 				span.AddEvent("action_finish")
 				return nil
 			}
-			if err := s.executeAction(ctx, sessionId, action, msgs); err != nil {
+			if err := s.executeTaskAction(ctx, sessionId, action, msgs); err != nil {
 				span.RecordError(err)
 				return err
 			}
@@ -174,8 +174,8 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 	return nil
 }
 
-func (s *V1Service) executeAction(ctx context.Context, sessionId uuid.UUID, action interpreter.TaskAction, msgs []v1.Message) error {
-	ctx, span := s.tracer.Start(ctx, "worker.executeAction")
+func (s *V1Service) executeTaskAction(ctx context.Context, sessionId uuid.UUID, action interpreter.TaskAction, msgs []v1.Message) error {
+	ctx, span := s.tracer.Start(ctx, "worker.executeTaskAction")
 	defer span.End()
 
 	span.SetAttributes(attribute.String("action.type", action.Type))
