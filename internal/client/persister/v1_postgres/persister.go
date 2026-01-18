@@ -127,6 +127,36 @@ func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	return err
 }
 
+func (p *v1PGPersister) ListSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
+	query := `SELECT id, space_id, trigger, sop, created_at FROM skills WHERE space_id = $1`
+	rows, err := p.conn.QueryContext(ctx, query, spaceId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var skills []v1.Skill
+	for rows.Next() {
+		var s v1.Skill
+		if err := rows.Scan(&s.Id, &s.SpaceId, &s.Trigger, &s.SOP, &s.CreatedAt); err != nil {
+			return nil, err
+		}
+		skills = append(skills, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return skills, nil
+}
+
+func (p *v1PGPersister) UpdateSkill(ctx context.Context, id uuid.UUID, trigger string, sop string, embedding []float32) error {
+	query := `UPDATE skills SET trigger = $1, sop = $2, embedding = $3 WHERE id = $4`
+	_, err := p.conn.ExecContext(ctx, query, trigger, sop, pgvector.NewVector(embedding), id)
+	return err
+}
+
 func (p *v1PGPersister) SearchSkills(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.Skill, error) {
 	options := persister.NewSearchOptions(opts...)
 
