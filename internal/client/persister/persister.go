@@ -23,7 +23,7 @@ type V1Persister interface {
 	GetSpace(ctx context.Context, id uuid.UUID) (*v1.Space, error)
 
 	SaveSkill(ctx context.Context, skill *v1.Skill) error
-	ListSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error)
+	FetchCurrentSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error)
 	UpdateSkill(ctx context.Context, id uuid.UUID, trigger string, sop string, embedding []float32) error
 	SearchSkills(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.Skill, error)
 

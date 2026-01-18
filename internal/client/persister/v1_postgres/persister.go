@@ -127,7 +127,7 @@ func (p *v1PGPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error {
 	return err
 }
 
-func (p *v1PGPersister) ListSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
+func (p *v1PGPersister) FetchCurrentSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
 	query := `SELECT id, space_id, trigger, sop, created_at FROM skills WHERE space_id = $1`
 	rows, err := p.conn.QueryContext(ctx, query, spaceId)
 	if err != nil {

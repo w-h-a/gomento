@@ -4,36 +4,33 @@ import (
 	"context"
 	"sync"
 
-	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 )
 
 type v1MockInterpreter struct {
 	options        interpreter.Options
-	actionRsp      []interpreter.TaskAction
-	skillRsp       *v1.Skill
+	distillRsp     []interpreter.SkillAction
+	extractRsp     []interpreter.TaskAction
 	distillHistory []v1.Message
+	distillSkills  []v1.Skill
 	extractHistory []v1.Message
 	extractFiles   []v1.File
 	extractTasks   []v1.Task
 	mtx            sync.RWMutex
 }
 
-func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int) (*v1.Skill, error) {
+func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	d.mtx.Lock()
 	d.distillHistory = history
+	d.distillSkills = currentSkills
 	d.mtx.Unlock()
 
-	if d.skillRsp != nil {
-		return d.skillRsp, nil
+	if d.distillRsp != nil {
+		return d.distillRsp, nil
 	}
 
-	return &v1.Skill{
-		Id:      uuid.New(),
-		Trigger: "how to restart redis",
-		SOP:     "1. Check logs.\n2. Delete pod.",
-	}, nil
+	return []interpreter.SkillAction{{Type: interpreter.SkillActionFinish}}, nil
 }
 
 func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
@@ -43,8 +40,8 @@ func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, m
 	d.extractTasks = currentTasks
 	d.mtx.Unlock()
 
-	if len(d.actionRsp) > 0 {
-		return d.actionRsp, nil
+	if len(d.extractRsp) > 0 {
+		return d.extractRsp, nil
 	}
 
 	return []interpreter.TaskAction{{Type: interpreter.TaskActionFinish}}, nil
@@ -54,6 +51,12 @@ func (d *v1MockInterpreter) DistillHistory() []v1.Message {
 	d.mtx.RLock()
 	defer d.mtx.RUnlock()
 	return d.distillHistory
+}
+
+func (d *v1MockInterpreter) DistillSkills() []v1.Skill {
+	d.mtx.RLock()
+	defer d.mtx.RUnlock()
+	return d.distillSkills
 }
 
 func (d *v1MockInterpreter) ExtractHistory() []v1.Message {
@@ -80,18 +83,19 @@ func NewV1Interpreter(opts ...interpreter.Option) *v1MockInterpreter {
 	d := &v1MockInterpreter{
 		options:        options,
 		distillHistory: []v1.Message{},
+		distillSkills:  []v1.Skill{},
 		extractHistory: []v1.Message{},
 		extractFiles:   []v1.File{},
 		extractTasks:   []v1.Task{},
 		mtx:            sync.RWMutex{},
 	}
 
-	if rsp, ok := SkillRspFrom(options.Context); ok {
-		d.skillRsp = rsp
+	if rsp, ok := DistillRspFrom(options.Context); ok {
+		d.distillRsp = rsp
 	}
 
-	if rsp, ok := ActionRspFrom(options.Context); ok {
-		d.actionRsp = rsp
+	if rsp, ok := ExtractRspFrom(options.Context); ok {
+		d.extractRsp = rsp
 	}
 
 	return d

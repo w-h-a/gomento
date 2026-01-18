@@ -7,6 +7,6 @@ import (
 )
 
 type V1Interpreter interface {
-	Distill(ctx context.Context, history []v1.Message, messageWindow int) (*v1.Skill, error)
+	Distill(ctx context.Context, history []v1.Message, messageWindow int, currentSkills []v1.Skill) ([]SkillAction, error)
 	Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]TaskAction, error)
 }

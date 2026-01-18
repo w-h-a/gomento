@@ -82,13 +82,24 @@ func InitV1Interpreter(
 	}
 
 	return v1mock.NewV1Interpreter(
-		v1mock.WithActionRsp(
+		v1mock.WithExtractRsp(
 			[]interpreter.TaskAction{
 				{
 					Type: interpreter.TaskActionInsert,
 					Payload: map[string]any{
 						"after_task_order": 0.0,
 						"task_description": "Integration Test Task",
+					},
+				},
+			},
+		),
+		v1mock.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": "Deploy to prod",
+						"sop":     "1. merge to main \n2. tag main on github with a semver",
 					},
 				},
 			},
