@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	"github.com/alecthomas/kong"
-	"github.com/w-h-a/gomento/internal/app"
+	"github.com/w-h-a/gomento/internal/app/gomento"
 	"github.com/w-h-a/gomento/internal/server"
 	v1fileservice "github.com/w-h-a/gomento/internal/service/v1_file"
 	v1sessionservice "github.com/w-h-a/gomento/internal/service/v1_session"
@@ -67,7 +67,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 	}
 
 	// logs
-	logsExporter, err := app.InitLogsExporter(ctx)
+	logsExporter, err := gomento.InitLogsExporter(ctx)
 	if err != nil {
 		return err
 	}
@@ -91,7 +91,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 	slog.SetDefault(logger)
 
 	// traces
-	traceExporter, err := app.InitTracesExporter(ctx, cli.TracesExporterLocation)
+	traceExporter, err := gomento.InitTracesExporter(ctx, cli.TracesExporterLocation)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 	// setup & run
 	stopChannels := map[string]chan struct{}{}
 
-	disp, err := app.InitV1Dispatcher(ctx)
+	disp, err := gomento.InitV1Dispatcher(ctx)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 
 		var err error
 
-		workerService, err = app.InitV1Worker(
+		workerService, err = gomento.InitV1Worker(
 			ctx,
 			disp,
 			cli.PersisterLocation,
@@ -154,7 +154,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 
 		var err error
 
-		spaceService, err = app.InitV1SpaceService(
+		spaceService, err = gomento.InitV1SpaceService(
 			ctx,
 			cli.PersisterLocation,
 			cli.OpenAIAPIKey,
@@ -165,7 +165,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		}
 		stopChannels["space"] = make(chan struct{})
 
-		sessionService, err = app.InitV1SessionService(
+		sessionService, err = gomento.InitV1SessionService(
 			ctx,
 			disp,
 			cli.PersisterLocation,
@@ -184,7 +184,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		}
 		stopChannels["session"] = make(chan struct{})
 
-		fileService, err = app.InitV1FileService(
+		fileService, err = gomento.InitV1FileService(
 			ctx,
 			cli.PersisterLocation,
 			cli.FilerEndpoint,
@@ -199,7 +199,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		}
 		stopChannels["file"] = make(chan struct{})
 
-		mcpServer, err = app.InitV1McpServer(
+		mcpServer, err = gomento.InitV1McpServer(
 			ctx,
 			cli.McpServerAddr,
 			cli.Name,
@@ -213,7 +213,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		}
 		stopChannels["mcpserver"] = make(chan struct{})
 
-		httpServer, err = app.InitV1HttpServer(
+		httpServer, err = gomento.InitV1HttpServer(
 			ctx,
 			cli.HttpServerAddr,
 			spaceService,

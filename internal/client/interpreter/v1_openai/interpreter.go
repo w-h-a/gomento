@@ -54,60 +54,60 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message,
 	}
 
 	var actions []interpreter.SkillAction
-	for i, choice := range rsp.Choices {
+
+	choice := rsp.Choices[0]
+
+	span.SetAttributes(
+		attribute.String("llm.finish_reason", choice.StopReason),
+		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+	)
+
+	if len(choice.Content) > 0 {
+		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
+	}
+
+	var toolNames []string
+	var toolArgs []string
+
+	for _, tc := range choice.ToolCalls {
+		toolNames = append(toolNames, tc.FunctionCall.Name)
+		toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
+	}
+
+	if len(toolNames) > 0 {
 		span.SetAttributes(
-			attribute.String(fmt.Sprintf("llm.choice_%d.finish_reason", i), choice.StopReason),
-			attribute.String(fmt.Sprintf("llm.choice_%d.model", i), d.options.Model),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.completion_tokens", i), util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.prompt_tokens", i), util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.total_tokens", i), util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+			attribute.StringSlice("ai.decision.tools", toolNames),
+			attribute.StringSlice("ai.decision.args", toolArgs),
 		)
+	}
 
-		if len(choice.Content) > 0 {
-			span.SetAttributes(attribute.String(fmt.Sprintf("ai.choice_%d.decision.reasoning", i), choice.Content))
-		}
-
-		var toolNames []string
-		var toolArgs []string
-
-		for _, tc := range choice.ToolCalls {
-			toolNames = append(toolNames, tc.FunctionCall.Name)
-			toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
-		}
-
-		if len(toolNames) > 0 {
-			span.SetAttributes(
-				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.tools", i), toolNames),
-				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.args", i), toolArgs),
-			)
-		}
-
-		for _, tc := range choice.ToolCalls {
-			payload := map[string]any{}
-			if len(tc.FunctionCall.Arguments) > 0 {
-				if err := json.Unmarshal([]byte(tc.FunctionCall.Arguments), &payload); err != nil {
-					slog.WarnContext(ctx, "failed to parse tool arguments", "err", err)
-					continue
-				}
-			}
-
-			var actionType string
-			switch tc.FunctionCall.Name {
-			case "insert_skill":
-				actionType = interpreter.SkillActionInsert
-			case "update_skill":
-				actionType = interpreter.SkillActionUpdate
-			case "finish":
-				actionType = interpreter.TaskActionFinish
-			default:
+	for _, tc := range choice.ToolCalls {
+		payload := map[string]any{}
+		if len(tc.FunctionCall.Arguments) > 0 {
+			if err := json.Unmarshal([]byte(tc.FunctionCall.Arguments), &payload); err != nil {
+				slog.WarnContext(ctx, "failed to parse tool arguments", "err", err)
 				continue
 			}
-
-			actions = append(actions, interpreter.SkillAction{
-				Type:    actionType,
-				Payload: payload,
-			})
 		}
+
+		var actionType string
+		switch tc.FunctionCall.Name {
+		case "insert_skill":
+			actionType = interpreter.SkillActionInsert
+		case "update_skill":
+			actionType = interpreter.SkillActionUpdate
+		case "finish":
+			actionType = interpreter.TaskActionFinish
+		default:
+			continue
+		}
+
+		actions = append(actions, interpreter.SkillAction{
+			Type:    actionType,
+			Payload: payload,
+		})
 	}
 
 	span.SetAttributes(attribute.Int("interpreter.actions_count", len(actions)))
@@ -144,65 +144,65 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 	}
 
 	var actions []interpreter.TaskAction
-	for i, choice := range rsp.Choices {
+
+	choice := rsp.Choices[0]
+
+	span.SetAttributes(
+		attribute.String("llm.finish_reason", choice.StopReason),
+		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+	)
+
+	if len(choice.Content) > 0 {
+		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
+	}
+
+	var toolNames []string
+	var toolArgs []string
+
+	for _, tc := range choice.ToolCalls {
+		toolNames = append(toolNames, tc.FunctionCall.Name)
+		toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
+	}
+
+	if len(toolNames) > 0 {
 		span.SetAttributes(
-			attribute.String(fmt.Sprintf("llm.choice_%d.finish_reason", i), choice.StopReason),
-			attribute.String(fmt.Sprintf("llm.choice_%d.model", i), d.options.Model),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.completion_tokens", i), util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.prompt_tokens", i), util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
-			attribute.Int(fmt.Sprintf("llm.choice_%d.total_tokens", i), util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+			attribute.StringSlice("ai.decision.tools", toolNames),
+			attribute.StringSlice("ai.decision.args", toolArgs),
 		)
+	}
 
-		if len(choice.Content) > 0 {
-			span.SetAttributes(attribute.String(fmt.Sprintf("ai.choice_%d.decision.reasoning", i), choice.Content))
-		}
-
-		var toolNames []string
-		var toolArgs []string
-
-		for _, tc := range choice.ToolCalls {
-			toolNames = append(toolNames, tc.FunctionCall.Name)
-			toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
-		}
-
-		if len(toolNames) > 0 {
-			span.SetAttributes(
-				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.tools", i), toolNames),
-				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.args", i), toolArgs),
-			)
-		}
-
-		for _, tc := range choice.ToolCalls {
-			payload := map[string]any{}
-			if len(tc.FunctionCall.Arguments) > 0 {
-				if err := json.Unmarshal([]byte(tc.FunctionCall.Arguments), &payload); err != nil {
-					slog.WarnContext(ctx, "failed to parse tool arguments", "err", err)
-					continue
-				}
-			}
-
-			var actionType string
-			switch tc.FunctionCall.Name {
-			case "insert_task":
-				actionType = interpreter.TaskActionInsert
-			case "update_task":
-				actionType = interpreter.TaskActionUpdate
-			case "append_messages_to_task":
-				actionType = interpreter.TaskActionAppendTask
-			case "append_messages_to_thought":
-				actionType = interpreter.TaskActionAppendThought
-			case "finish":
-				actionType = interpreter.TaskActionFinish
-			default:
-				slog.WarnContext(ctx, "unknown tool call", "name", tc.FunctionCall.Name)
+	for _, tc := range choice.ToolCalls {
+		payload := map[string]any{}
+		if len(tc.FunctionCall.Arguments) > 0 {
+			if err := json.Unmarshal([]byte(tc.FunctionCall.Arguments), &payload); err != nil {
+				slog.WarnContext(ctx, "failed to parse tool arguments", "err", err)
 				continue
 			}
-
-			actions = append(actions, interpreter.TaskAction{
-				Type:    actionType,
-				Payload: payload,
-			})
 		}
+
+		var actionType string
+		switch tc.FunctionCall.Name {
+		case "insert_task":
+			actionType = interpreter.TaskActionInsert
+		case "update_task":
+			actionType = interpreter.TaskActionUpdate
+		case "append_messages_to_task":
+			actionType = interpreter.TaskActionAppendTask
+		case "append_messages_to_thought":
+			actionType = interpreter.TaskActionAppendThought
+		case "finish":
+			actionType = interpreter.TaskActionFinish
+		default:
+			slog.WarnContext(ctx, "unknown tool call", "name", tc.FunctionCall.Name)
+			continue
+		}
+
+		actions = append(actions, interpreter.TaskAction{
+			Type:    actionType,
+			Payload: payload,
+		})
 	}
 
 	span.SetAttributes(attribute.Int("interpreter.actions_count", len(actions)))
