@@ -11,12 +11,12 @@ import (
 	toolprovider "github.com/w-h-a/gomento/internal/client/tool_provider"
 )
 
-type mcpToolProvider struct {
+type v1McpToolProvider struct {
 	options toolprovider.Options
 	client  *client.Client
 }
 
-func (tp *mcpToolProvider) Start(ctx context.Context) error {
+func (tp *v1McpToolProvider) Start(ctx context.Context) error {
 	if err := tp.client.Start(ctx); err != nil {
 		return err
 	}
@@ -24,7 +24,7 @@ func (tp *mcpToolProvider) Start(ctx context.Context) error {
 	if _, err := tp.client.Initialize(ctx, mcp.InitializeRequest{
 		Params: mcp.InitializeParams{
 			ProtocolVersion: mcp.LATEST_PROTOCOL_VERSION,
-			ClientInfo:      mcp.Implementation{Name: "my-agent", Version: "0.1.0"},
+			ClientInfo:      mcp.Implementation{Name: "my-agent", Version: "1.0.0"},
 		},
 	}); err != nil {
 		return err
@@ -33,7 +33,7 @@ func (tp *mcpToolProvider) Start(ctx context.Context) error {
 	return nil
 }
 
-func (tp *mcpToolProvider) List(ctx context.Context) ([]v1.ToolDefinition, error) {
+func (tp *v1McpToolProvider) List(ctx context.Context) ([]v1.ToolDefinition, error) {
 	rsp, err := tp.client.ListTools(ctx, mcp.ListToolsRequest{})
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func (tp *mcpToolProvider) List(ctx context.Context) ([]v1.ToolDefinition, error
 	return tools, nil
 }
 
-func (tp *mcpToolProvider) Call(ctx context.Context, name string, args map[string]any) (string, error) {
+func (tp *v1McpToolProvider) Call(ctx context.Context, name string, args map[string]any) (string, error) {
 	result, err := tp.client.CallTool(ctx, mcp.CallToolRequest{
 		Params: mcp.CallToolParams{
 			Name:      name,
@@ -80,10 +80,10 @@ func (tp *mcpToolProvider) Call(ctx context.Context, name string, args map[strin
 	return out.String(), nil
 }
 
-func NewToolProvider(opts ...toolprovider.Option) toolprovider.ToolProvider {
+func NewV1ToolProvider(opts ...toolprovider.Option) toolprovider.V1ToolProvider {
 	options := toolprovider.NewOptions(opts...)
 
-	tp := &mcpToolProvider{
+	tp := &v1McpToolProvider{
 		options: options,
 	}
 

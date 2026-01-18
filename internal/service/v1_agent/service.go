@@ -1,4 +1,4 @@
-package agent
+package v1agent
 
 import (
 	"context"
@@ -17,15 +17,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-type Agent struct {
+type V1Agent struct {
 	*service.Service
 	model        llms.Model
-	toolProvider toolprovider.ToolProvider
+	toolProvider toolprovider.V1ToolProvider
 	tracer       trace.Tracer
 	instructions string
 }
 
-func (a *Agent) CreateSession(ctx context.Context, spaceId *uuid.UUID) (uuid.UUID, error) {
+func (a *V1Agent) CreateSession(ctx context.Context, spaceId *uuid.UUID) (uuid.UUID, error) {
 	ctx, span := a.tracer.Start(ctx, "agent.CreateSession")
 	defer span.End()
 
@@ -53,7 +53,7 @@ func (a *Agent) CreateSession(ctx context.Context, spaceId *uuid.UUID) (uuid.UUI
 	return sess.Id, nil
 }
 
-func (a *Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input string) (string, []string, error) {
+func (a *V1Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input string) (string, []string, error) {
 	ctx, span := a.tracer.Start(ctx, "agent.TakeTurns")
 	defer span.End()
 
@@ -204,9 +204,9 @@ func (a *Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input string
 	return "Error: max turns exceeded", toolCallsLog, nil
 }
 
-func New(model llms.Model, toolProvider toolprovider.ToolProvider, instructions string) *Agent {
+func New(model llms.Model, toolProvider toolprovider.V1ToolProvider, instructions string) *V1Agent {
 	s := service.New()
-	return &Agent{
+	return &V1Agent{
 		Service:      s,
 		model:        model,
 		toolProvider: toolProvider,
