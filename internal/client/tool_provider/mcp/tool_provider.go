@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
@@ -65,7 +66,18 @@ func (tp *mcpToolProvider) Call(ctx context.Context, name string, args map[strin
 		return "", err
 	}
 
-	return fmt.Sprintf("%v", result.Content), nil
+	if result.IsError {
+		return "", fmt.Errorf("tool execution failed: %v", result.Content)
+	}
+
+	var out strings.Builder
+	for _, content := range result.Content {
+		if tc, ok := content.(mcp.TextContent); ok {
+			out.WriteString(tc.Text)
+		}
+	}
+
+	return out.String(), nil
 }
 
 func NewToolProvider(opts ...toolprovider.Option) toolprovider.ToolProvider {
