@@ -115,6 +115,36 @@ func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error 
 	return nil
 }
 
+func (p *v1MockPersister) ListSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	cpy := make(map[uuid.UUID]*v1.Skill, len(p.skills))
+	maps.Copy(cpy, p.skills)
+
+	result := make([]v1.Skill, 0, len(cpy))
+	for _, s := range cpy {
+		if s.SpaceId == spaceId {
+			result = append(result, *s)
+		}
+	}
+
+	return result, nil
+}
+
+func (p *v1MockPersister) UpdateSkill(ctx context.Context, id uuid.UUID, trigger string, sop string, embedding []float32) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+
+	if existing, ok := p.skills[id]; ok {
+		existing.Trigger = trigger
+		existing.SOP = sop
+		existing.Embedding = embedding
+	}
+
+	return nil
+}
+
 func (p *v1MockPersister) SearchSkills(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.Skill, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
