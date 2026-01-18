@@ -16,7 +16,7 @@ integration-test:
 
 .PHONY: go-build
 go-build:
-	CGO_ENABLED=0 go build -o ./bin/gomento ./
+	CGO_ENABLED=0 go build -o ./bin/gomento ./cmd/gomento
 
 .PHONY: go-install
 go-install:
