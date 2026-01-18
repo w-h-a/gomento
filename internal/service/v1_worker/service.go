@@ -98,8 +98,6 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 	ctx, span := s.tracer.Start(ctx, "worker.extract")
 	defer span.End()
 
-	maxIterations := 3
-
 	sess, err := s.persister.GetSession(ctx, sessionId)
 	if err != nil {
 		span.RecordError(err)
@@ -132,12 +130,18 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 		finalWindow = 10
 	}
 
+	maxIterations := 3
+
 	for i := range maxIterations {
 		span.AddEvent("extract_iteration_start", trace.WithAttributes(
 			attribute.Int("iteration", i+1),
 		))
 
-		msgs, err := s.persister.ListMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
+		msgs, err := s.persister.ListMessages(
+			ctx,
+			sessionId,
+			persister.WithSort(persister.SortOrderAsc),
+		)
 		if err != nil {
 			span.RecordError(err)
 			return err
@@ -197,6 +201,8 @@ func (s *V1Service) executeTaskAction(ctx context.Context, sessionId uuid.UUID, 
 
 		data, _ := json.Marshal(map[string]string{"task_description": desc})
 
+		span.AddEvent("saving_task")
+
 		if _, err := s.persister.InsertTask(ctx, sessionId, order, data, "pending"); err != nil {
 			return err
 		}
@@ -243,6 +249,8 @@ func (s *V1Service) executeTaskAction(ctx context.Context, sessionId uuid.UUID, 
 			existing["task_description"] = desc
 			bs, _ = json.Marshal(existing)
 		}
+
+		span.AddEvent("updating_task")
 
 		if _, err := s.persister.UpdateTask(ctx, targetId, status, nil, bs); err != nil {
 			return err
@@ -291,6 +299,8 @@ func (s *V1Service) executeTaskAction(ctx context.Context, sessionId uuid.UUID, 
 			}
 		}
 
+		span.AddEvent("appending_messages_to_task")
+
 		return s.persister.AppendMessagesToTask(ctx, targetId, ids)
 	case interpreter.TaskActionAppendThought:
 		indices, ok := p["message_ids"].([]any)
@@ -308,6 +318,8 @@ func (s *V1Service) executeTaskAction(ctx context.Context, sessionId uuid.UUID, 
 			}
 		}
 
+		span.AddEvent("appending_messages_to_thought")
+
 		return s.persister.AppendMessagesToThought(ctx, sessionId, ids)
 	default:
 		return nil
@@ -323,6 +335,10 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		span.RecordError(err)
 		return err
 	}
+	if sess == nil {
+		return fmt.Errorf("session %v not found", sessionId)
+	}
+
 	if sess.SpaceId == nil {
 		slog.InfoContext(ctx, "session has no space, skipping distillation", "session_id", sessionId)
 		span.AddEvent("distill_skipped")
@@ -344,32 +360,106 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 
-	skill, err := s.interpreter.Distill(ctx, msgs, finalWindow)
+	skills, err := s.persister.FetchCurrentSkills(ctx, *sess.SpaceId)
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
 
-	span.SetAttributes(
-		attribute.String("skill.trigger", skill.Trigger),
-		attribute.Int("skill.sop_length", len(skill.SOP)),
-	)
-
-	skill.SpaceId = *sess.SpaceId
-
-	vec, err := s.embedder.Embed(ctx, skill.Trigger)
+	actions, err := s.interpreter.Distill(ctx, msgs, finalWindow, skills)
 	if err != nil {
-		slog.WarnContext(ctx, "failed to embed skill trigger", "error", err)
 		span.RecordError(err)
 		return err
 	}
 
-	skill.Embedding = vec
+	if len(actions) == 0 {
+		return nil
+	}
 
-	slog.InfoContext(ctx, "saving skill", "trigger", skill.Trigger)
-	span.AddEvent("saving_skill")
+	for _, action := range actions {
+		if action.Type == interpreter.SkillActionFinish {
+			span.AddEvent("action_finish")
+			return nil
+		}
+		if err := s.executeSkillAction(ctx, sess, action); err != nil {
+			span.RecordError(err)
+			return err
+		}
+	}
 
-	return s.persister.SaveSkill(ctx, skill)
+	return nil
+}
+
+func (s *V1Service) executeSkillAction(ctx context.Context, sess *v1.Session, action interpreter.SkillAction) error {
+	ctx, span := s.tracer.Start(ctx, "worker.executeSkillAction")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("action.type", action.Type))
+
+	p := action.Payload
+
+	switch action.Type {
+	case interpreter.SkillActionInsert:
+		trigger, ok := p["trigger"].(string)
+		if !ok {
+			return fmt.Errorf("invalid or missing 'trigger' in payload")
+		}
+
+		sop, ok := p["sop"].(string)
+		if !ok {
+			return fmt.Errorf("invalid or missing 'sop' in payload")
+		}
+
+		vec, err := s.embedder.Embed(ctx, trigger)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
+
+		skill := &v1.Skill{
+			Id:        uuid.New(),
+			SpaceId:   *sess.SpaceId,
+			Trigger:   trigger,
+			SOP:       sop,
+			Embedding: vec,
+		}
+
+		span.AddEvent("saving_skill")
+
+		return s.persister.SaveSkill(ctx, skill)
+	case interpreter.SkillActionUpdate:
+		idStr, ok := p["skill_id"].(string)
+		if !ok {
+			return fmt.Errorf("missing 'skill_id' in payload")
+		}
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			return fmt.Errorf("invalid 'skill_id' in payload")
+		}
+
+		trigger, ok := p["trigger"].(string)
+		if !ok {
+			return fmt.Errorf("invalid or missing 'trigger' in payload")
+		}
+
+		sop, ok := p["sop"].(string)
+		if !ok {
+			return fmt.Errorf("invalid or missing 'sop' in payload")
+		}
+
+		vec, err := s.embedder.Embed(ctx, trigger)
+		if err != nil {
+			span.RecordError(err)
+			return err
+
+		}
+
+		span.AddEvent("updating_skill")
+
+		return s.persister.UpdateSkill(ctx, id, trigger, sop, vec)
+	default:
+		return nil
+	}
 }
 
 func NewV1Service(

@@ -123,7 +123,7 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 	assert.Equal(t, "readme.md", seenFiles[0].Filename)
 }
 
-func TestProcessJob_Checkpoint_UpdatesTasksOnly(t *testing.T) {
+func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -133,13 +133,14 @@ func TestProcessJob_Checkpoint_UpdatesTasksOnly(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 
-	insertAction := interpreter.TaskAction{
-		Type:    interpreter.TaskActionInsert,
-		Payload: map[string]any{"after_task_order": 0.0, "task_description": "New Task"},
-	}
 	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithActionRsp(
-			[]interpreter.TaskAction{insertAction},
+		v1mockinterpreter.WithExtractRsp(
+			[]interpreter.TaskAction{
+				{
+					Type:    interpreter.TaskActionInsert,
+					Payload: map[string]any{"after_task_order": 0.0, "task_description": "New Task"},
+				},
+			},
 		),
 	)
 	e := mockembedder.NewEmbedder()
@@ -166,13 +167,14 @@ func TestProcessJob_Checkpoint_UpdatesTasksOnly(t *testing.T) {
 	// Assert
 	updated := p.Jobs()[job.Id]
 	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
+
 	assert.Len(t, p.Skills(), 0, "Extract job should not create skills")
 
 	tasks, _ := p.FetchCurrentTasks(ctx, sessionId, nil)
-	assert.Len(t, tasks, 3)
+	assert.Len(t, tasks, 3, "Extract job should create tasks")
 }
 
-func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
+func TestProcessJob_Distill_DistillsSkillsOnly(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -182,9 +184,17 @@ func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithActionRsp([]interpreter.TaskAction{
-			{Type: interpreter.TaskActionFinish},
-		}),
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": "how to fix nginx",
+						"sop":     "1. restart nginx",
+					},
+				},
+			},
+		),
 	)
 	e := mockembedder.NewEmbedder()
 	s := v1worker.NewV1Service(p, d, i, e)
@@ -211,10 +221,15 @@ func TestProcessJob_Finalize_UpdatesTasksAndDistills(t *testing.T) {
 	// Assert
 	updated := p.Jobs()[job.Id]
 	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
-	assert.Len(t, p.Skills(), 1, "Distill job should create a skill")
+
+	tasks, _ := p.FetchCurrentTasks(ctx, sessionId, nil)
+	assert.Len(t, tasks, 0, "Distill job should not create tasks")
+
+	skills, _ := p.FetchCurrentSkills(ctx, spaceId)
+	assert.Len(t, skills, 1, "Distill job should create a skill")
 }
 
-func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
+func TestProcessJob_Distill_InsertsNewSkill(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -226,14 +241,20 @@ func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 
 	expectedTrigger := "how to fix nginx"
 	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithSkillRsp(&v1.Skill{
-			Id:        uuid.New(),
-			Trigger:   expectedTrigger,
-			SOP:       "1. restart nginx",
-			Embedding: make([]float32, 1536),
-		}),
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": expectedTrigger,
+						"sop":     "1. restart nginx",
+					},
+				},
+			},
+		),
 	)
 	e := mockembedder.NewEmbedder()
+
 	s := v1worker.NewV1Service(p, d, i, e)
 
 	spaceId := uuid.New()
@@ -276,14 +297,136 @@ func TestProcessJob_DistillsAndSavesSkill(t *testing.T) {
 	assert.Equal(t, expectedTrigger, e.Input())
 }
 
+func TestProcessJob_Distill_UpdatesExistingSkill(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+
+	spaceId := uuid.New()
+	sessionId := uuid.New()
+	skillId := uuid.New()
+	ctx := context.Background()
+
+	// Add existing skill
+	existingSkill := &v1.Skill{
+		Id:      skillId,
+		SpaceId: spaceId,
+		Trigger: "old trigger",
+		SOP:     "old sop",
+	}
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+	_ = p.SaveSkill(ctx, existingSkill)
+
+	newTrigger := "updated trigger"
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionUpdate,
+					Payload: map[string]any{
+						"skill_id": skillId.String(),
+						"trigger":  newTrigger,
+						"sop":      "updated sop",
+					},
+				},
+			},
+		),
+	)
+
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), i, e)
+
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	_ = p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updatedSkill := p.Skills()[skillId]
+	assert.Equal(t, skillId, updatedSkill.Id)
+	assert.Equal(t, newTrigger, updatedSkill.Trigger)
+	assert.Equal(t, "updated sop", updatedSkill.SOP)
+	assert.Equal(t, newTrigger, e.Input())
+}
+
+func TestProcessJob_Distill_IncludesSkillContext(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter()
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, i, e)
+
+	ctx := context.Background()
+	spaceId := uuid.New()
+	sessionId := uuid.New()
+
+	// 1. Setup Session & Space
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
+	// 2. Setup Existing Skill
+	existingSkill := &v1.Skill{
+		Id:      uuid.New(),
+		SpaceId: spaceId,
+		Trigger: "how to check logs",
+		SOP:     "run docker logs",
+	}
+	_ = p.SaveSkill(ctx, existingSkill)
+
+	// 3. Create Job
+	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	_ = p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	contextSkills := i.DistillSkills()
+	assert.Len(t, contextSkills, 1)
+	assert.Equal(t, existingSkill.Trigger, contextSkills[0].Trigger)
+	assert.Equal(t, existingSkill.Id, contextSkills[0].Id)
+}
+
 func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithSkillRsp(&v1.Skill{
-			Id: uuid.New(), Trigger: "trigger", SOP: "sop",
-		}),
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": "trigger",
+						"sop":     "sop",
+					},
+				},
+			},
+		),
 	)
 	e := mockembedder.NewEmbedder(mockembedder.WithError(errors.New("openai down")))
 
@@ -324,12 +467,17 @@ func TestProcessJob_ProcessingOrder(t *testing.T) {
 	p := v1mockpersister.NewV1Persister()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithSkillRsp(&v1.Skill{
-			Id:        uuid.New(),
-			Trigger:   "test",
-			SOP:       "test",
-			Embedding: []float32{0.1},
-		}),
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": "test",
+						"sop":     "test",
+					},
+				},
+			},
+		),
 	)
 	e := mockembedder.NewEmbedder()
 	s := v1worker.NewV1Service(p, d, i, e)

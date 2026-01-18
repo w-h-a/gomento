@@ -115,7 +115,7 @@ func (p *v1MockPersister) SaveSkill(ctx context.Context, skill *v1.Skill) error 
 	return nil
 }
 
-func (p *v1MockPersister) ListSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
+func (p *v1MockPersister) FetchCurrentSkills(ctx context.Context, spaceId uuid.UUID) ([]v1.Skill, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 

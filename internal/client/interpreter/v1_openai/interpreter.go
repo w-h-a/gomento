@@ -25,7 +25,7 @@ type v1OpenaiInterpreter struct {
 	tracer  trace.Tracer
 }
 
-func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int) (*v1.Skill, error) {
+func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Distill")
 	defer span.End()
 
@@ -33,13 +33,14 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message,
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.distillSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, messageWindow)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, messageWindow, currentSkills)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
 		ctx,
 		content,
-		llms.WithJSONMode(),
+		llms.WithTools(d.getDistillTools()),
+		llms.WithTemperature(0),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -52,34 +53,66 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message,
 		return nil, err
 	}
 
-	choice := rsp.Choices[0]
-	span.SetAttributes(
-		attribute.String("llm.finish_reason", choice.StopReason),
-		attribute.String("llm.model", d.options.Model),
-		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
-		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
-		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
-	)
+	var actions []interpreter.SkillAction
+	for i, choice := range rsp.Choices {
+		span.SetAttributes(
+			attribute.String(fmt.Sprintf("llm.choice_%d.finish_reason", i), choice.StopReason),
+			attribute.String(fmt.Sprintf("llm.choice_%d.model", i), d.options.Model),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.completion_tokens", i), util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.prompt_tokens", i), util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.total_tokens", i), util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+		)
 
-	if len(choice.Content) > 0 {
-		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
+		if len(choice.Content) > 0 {
+			span.SetAttributes(attribute.String(fmt.Sprintf("ai.choice_%d.decision.reasoning", i), choice.Content))
+		}
+
+		var toolNames []string
+		var toolArgs []string
+
+		for _, tc := range choice.ToolCalls {
+			toolNames = append(toolNames, tc.FunctionCall.Name)
+			toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
+		}
+
+		if len(toolNames) > 0 {
+			span.SetAttributes(
+				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.tools", i), toolNames),
+				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.args", i), toolArgs),
+			)
+		}
+
+		for _, tc := range choice.ToolCalls {
+			payload := map[string]any{}
+			if len(tc.FunctionCall.Arguments) > 0 {
+				if err := json.Unmarshal([]byte(tc.FunctionCall.Arguments), &payload); err != nil {
+					slog.WarnContext(ctx, "failed to parse tool arguments", "err", err)
+					continue
+				}
+			}
+
+			var actionType string
+			switch tc.FunctionCall.Name {
+			case "insert_skill":
+				actionType = interpreter.SkillActionInsert
+			case "update_skill":
+				actionType = interpreter.SkillActionUpdate
+			case "finish":
+				actionType = interpreter.TaskActionFinish
+			default:
+				continue
+			}
+
+			actions = append(actions, interpreter.SkillAction{
+				Type:    actionType,
+				Payload: payload,
+			})
+		}
 	}
 
-	raw := choice.Content
+	span.SetAttributes(attribute.Int("interpreter.actions_count", len(actions)))
 
-	var result v1.Skill
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		span.RecordError(err)
-		return nil, fmt.Errorf("failed to parse llm json: %w", err)
-	}
-
-	if len(result.SOP) == 0 || len(result.Trigger) == 0 {
-		err := fmt.Errorf("llm returned incomplete data: %s", raw)
-		span.RecordError(err)
-		return nil, err
-	}
-
-	return &result, nil
+	return actions, nil
 }
 
 func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
@@ -110,36 +143,35 @@ func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message,
 		return nil, err
 	}
 
-	choice := rsp.Choices[0]
-	span.SetAttributes(
-		attribute.String("llm.finish_reason", choice.StopReason),
-		attribute.String("llm.model", d.options.Model),
-		attribute.Int("llm.completion_tokens", util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
-		attribute.Int("llm.prompt_tokens", util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
-		attribute.Int("llm.total_tokens", util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
-	)
-
-	if len(choice.Content) > 0 {
-		span.SetAttributes(attribute.String("ai.decision.reasoning", choice.Content))
-	}
-
-	var toolNames []string
-	var toolArgs []string
-
-	for _, tc := range choice.ToolCalls {
-		toolNames = append(toolNames, tc.FunctionCall.Name)
-		toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
-	}
-
-	if len(toolNames) > 0 {
-		span.SetAttributes(
-			attribute.StringSlice("ai.decision.tools", toolNames),
-			attribute.StringSlice("ai.decision.args", toolArgs),
-		)
-	}
-
 	var actions []interpreter.TaskAction
-	for _, choice := range rsp.Choices {
+	for i, choice := range rsp.Choices {
+		span.SetAttributes(
+			attribute.String(fmt.Sprintf("llm.choice_%d.finish_reason", i), choice.StopReason),
+			attribute.String(fmt.Sprintf("llm.choice_%d.model", i), d.options.Model),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.completion_tokens", i), util.GetSafeInt(choice.GenerationInfo, "CompletionTokens")),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.prompt_tokens", i), util.GetSafeInt(choice.GenerationInfo, "PromptTokens")),
+			attribute.Int(fmt.Sprintf("llm.choice_%d.total_tokens", i), util.GetSafeInt(choice.GenerationInfo, "TotalTokens")),
+		)
+
+		if len(choice.Content) > 0 {
+			span.SetAttributes(attribute.String(fmt.Sprintf("ai.choice_%d.decision.reasoning", i), choice.Content))
+		}
+
+		var toolNames []string
+		var toolArgs []string
+
+		for _, tc := range choice.ToolCalls {
+			toolNames = append(toolNames, tc.FunctionCall.Name)
+			toolArgs = append(toolArgs, tc.FunctionCall.Arguments)
+		}
+
+		if len(toolNames) > 0 {
+			span.SetAttributes(
+				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.tools", i), toolNames),
+				attribute.StringSlice(fmt.Sprintf("ai.choice_%d.decision.args", i), toolArgs),
+			)
+		}
+
 		for _, tc := range choice.ToolCalls {
 			payload := map[string]any{}
 			if len(tc.FunctionCall.Arguments) > 0 {
@@ -190,7 +222,7 @@ Output MUST be a valid JSON object with keys "trigger" and "sop".
 {"trigger": "Description of the situation that necessitates the skill (e.g., Database connection refused)", "sop": "The generalized, step-by-step guide to solving the problem"}
 
 ## Input
-You will be given history of a user interacting with an Assistant.
+You will receive "Current Messages" (potential for new knowledge) and "Current Skills" (existing knowledge base).
 
 ## Objectives
 1. Identify the core technical problem solved in the session.
@@ -204,6 +236,11 @@ You will be given history of a user interacting with an Assistant.
 * If no practical technical knowledge was generated, do not make something up; just return empty JSON
 * SOP must be concise
 * The Trigger must be phrased as a problem statement.
+* Before creating a new skill, check if a similar skill exists in "Current Skills".
+* Update vs Insert:
+   - **MATCH FOUND**: If the new conversation offers a *better* or *more complete* solution than the existing skill, use ` + "`update_skill`" + `.
+   - **MATCH FOUND (NO NEW INFO)**: If the existing skill is already perfect, DO NOTHING. Call ` + "`finish`" + `.
+   - **NO MATCH**: Use ` + "`insert_skill`" + ` to create a new entry.
 
 ## Output Requirement
 You must "think" before acting. Your response must include a thought process explaining your matching decision for each item.
@@ -288,10 +325,17 @@ You must "think" before acting. Your response must include a thought process exp
 `
 }
 
-func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWindow int) string {
+func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWindow int, skills []v1.Skill) string {
 	var sb strings.Builder
 
-	sb.WriteString("Analyze the following conversation and extract the core automation skill:\n\n")
+	sb.WriteString("## Current Skills (Knowledge Base):\n")
+	if len(skills) == 0 {
+		sb.WriteString("(No skills yet)\n")
+	} else {
+		for _, s := range skills {
+			sb.WriteString(fmt.Sprintf("- ID: %s | Trigger: %s\n  SOP Preview: %.50s...\n", s.Id, s.Trigger, s.SOP))
+		}
+	}
 
 	var previousMsgs []v1.Message
 	var currentMsgs []v1.Message
@@ -332,6 +376,8 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWin
 		actualIndex := currentIndexStart + i
 		sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", actualIndex, strings.Join(lines, "\n")))
 	}
+
+	sb.WriteString("\nAnalyze and determine actions.\n")
 
 	return sb.String()
 }
@@ -456,6 +502,50 @@ func (d *v1OpenaiInterpreter) packMessageLine(role string, part v1.Part) string 
 	}
 }
 
+func (d *v1OpenaiInterpreter) getDistillTools() []llms.Tool {
+	return []llms.Tool{
+		{
+			Type: "function",
+			Function: &llms.FunctionDefinition{
+				Name:        "insert_skill",
+				Description: "Save a new skill extracted from the conversation.",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"trigger": map[string]any{"type": "string", "description": "The problem statement triggering this skill."},
+						"sop":     map[string]any{"type": "string", "description": "Step-by-step resolution guide."},
+					},
+					"required": []string{"trigger", "sop"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: &llms.FunctionDefinition{
+				Name:        "update_skill",
+				Description: "Update an existing skill with better information.",
+				Parameters: map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"skill_id": map[string]any{"type": "string", "description": "UUID of the skill to update."},
+						"trigger":  map[string]any{"type": "string"},
+						"sop":      map[string]any{"type": "string"},
+					},
+					"required": []string{"skill_id", "trigger", "sop"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: &llms.FunctionDefinition{
+				Name:        "finish",
+				Description: "Complete the distillation process.",
+				Parameters:  map[string]any{"type": "object", "properties": map[string]any{}},
+			},
+		},
+	}
+}
+
 func (d *v1OpenaiInterpreter) getExtractTools() []llms.Tool {
 	return []llms.Tool{
 		{
@@ -522,7 +612,7 @@ func (d *v1OpenaiInterpreter) getExtractTools() []llms.Tool {
 			Type: "function",
 			Function: &llms.FunctionDefinition{
 				Name:        "finish",
-				Description: "Complete the extraction session.",
+				Description: "Complete the extraction process.",
 				Parameters:  map[string]any{"type": "object", "properties": map[string]interface{}{}},
 			},
 		},

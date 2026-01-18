@@ -3,32 +3,31 @@ package v1mock
 import (
 	"context"
 
-	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 )
 
-type skillRspKey struct{}
+type distillRspKey struct{}
 
-func WithSkillRsp(rsp *v1.Skill) interpreter.Option {
+func WithDistillRsp(rsp []interpreter.SkillAction) interpreter.Option {
 	return func(o *interpreter.Options) {
-		o.Context = context.WithValue(o.Context, skillRspKey{}, rsp)
+		o.Context = context.WithValue(o.Context, distillRspKey{}, rsp)
 	}
 }
 
-func SkillRspFrom(ctx context.Context) (*v1.Skill, bool) {
-	rsp, ok := ctx.Value(skillRspKey{}).(*v1.Skill)
+func DistillRspFrom(ctx context.Context) ([]interpreter.SkillAction, bool) {
+	rsp, ok := ctx.Value(distillRspKey{}).([]interpreter.SkillAction)
 	return rsp, ok
 }
 
-type actionRspKey struct{}
+type extractRspKey struct{}
 
-func WithActionRsp(rsp []interpreter.TaskAction) interpreter.Option {
+func WithExtractRsp(rsp []interpreter.TaskAction) interpreter.Option {
 	return func(o *interpreter.Options) {
-		o.Context = context.WithValue(o.Context, actionRspKey{}, rsp)
+		o.Context = context.WithValue(o.Context, extractRspKey{}, rsp)
 	}
 }
 
-func ActionRspFrom(ctx context.Context) ([]interpreter.TaskAction, bool) {
-	rsp, ok := ctx.Value(actionRspKey{}).([]interpreter.TaskAction)
+func ExtractRspFrom(ctx context.Context) ([]interpreter.TaskAction, bool) {
+	rsp, ok := ctx.Value(extractRspKey{}).([]interpreter.TaskAction)
 	return rsp, ok
 }
