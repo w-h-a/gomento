@@ -1,5 +1,9 @@
 # gomento
 
+<div align="center">
+  <img src="./.github/assets/gomento.png" alt="GoMento Mascot" width="200" />
+</div>
+
 ## Problem
 
 If your agent solves a complex bug today, and you ask it to solve the same bug next week, it starts from scratch. It doesn't remember the solution; it just has a massive log file that it can't read efficiently.
@@ -8,7 +12,7 @@ Agents make the same mistakes repeatedly because their successes are buried in r
 
 ## Solution
 
-GoMento is a high-performance, single-binary sidecar written in **Go**. It accepts raw chat logs and files, uses a background worker to (a) **extract** a summary of the current session and (b) **distill** the current session into skills that are not session-bound, and makes all this memory easily searchable for your agent.
+GoMento is a high-performance, single-binary sidecar for AI memory written in **Go**. It accepts raw chat logs and files, uses a background worker to (a) **extract** a summary of the current session and (b) **distill** the current session into skills that are not session-bound, and makes all this memory easily searchable for your agent.
 
 ### Usage
 
