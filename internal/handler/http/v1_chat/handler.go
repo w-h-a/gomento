@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	v1 "github.com/w-h-a/gomento/api/chat/v1"
 	httphandler "github.com/w-h-a/gomento/internal/handler/http"
 	v1agent "github.com/w-h-a/gomento/internal/service/v1_agent"
 )
@@ -50,8 +51,9 @@ func (h *v1Handler) Chat(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		SessionId string `json:"session_id"`
-		Input     string `json:"input"`
+		SessionId string            `json:"session_id"`
+		Text      string            `json:"text"`
+		Files     map[string]string `json:"files"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,12 +72,16 @@ func (h *v1Handler) Chat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(req.Input) == 0 {
-		httphandler.WrtErr(w, http.StatusBadRequest, "input is required")
+	if len(req.Text) == 0 {
+		httphandler.WrtErr(w, http.StatusBadRequest, "text is required")
 		return
 	}
 
-	response, toolLogs, err := h.agent.TakeTurns(r.Context(), sessId, req.Input)
+	response, toolLogs, err := h.agent.Chat(r.Context(), &v1.Chat{
+		SessionId: sessId,
+		Text:      req.Text,
+		Files:     req.Files,
+	})
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
