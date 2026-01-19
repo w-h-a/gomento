@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/tmc/langchaingo/llms"
+	v1chat "github.com/w-h-a/gomento/api/chat/v1"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	toolprovider "github.com/w-h-a/gomento/internal/client/tool_provider"
 	"github.com/w-h-a/gomento/internal/service"
@@ -53,11 +54,61 @@ func (a *V1Agent) CreateSession(ctx context.Context, spaceId *uuid.UUID) (uuid.U
 	return sess.Id, nil
 }
 
-func (a *V1Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input string) (string, []string, error) {
-	ctx, span := a.tracer.Start(ctx, "agent.TakeTurns")
+func (a *V1Agent) Chat(ctx context.Context, chat *v1chat.Chat) (string, []string, error) {
+	ctx, span := a.tracer.Start(ctx, "agent.Chat")
 	defer span.End()
 
-	span.SetAttributes(attribute.String("session_id", sessionId.String()))
+	span.SetAttributes(attribute.String("session_id", chat.SessionId.String()))
+
+	if err := a.saveUserMessage(ctx, chat); err != nil {
+		span.RecordError(err)
+		return "", nil, fmt.Errorf("failed to save user message to memory: %w", err)
+	}
+
+	return a.takeTurns(ctx, chat)
+}
+
+func (a *V1Agent) saveUserMessage(ctx context.Context, chat *v1chat.Chat) error {
+	ctx, span := a.tracer.Start(ctx, "agent.saveUserMessage")
+	defer span.End()
+
+	parts := []map[string]string{
+		{
+			"type": "text",
+			"text": chat.Text,
+		},
+	}
+
+	filesArg := map[string]any{}
+
+	for fname, content := range chat.Files {
+		parts = append(parts, map[string]string{
+			"type":       "file",
+			"file_field": fname,
+		})
+		filesArg[fname] = content
+	}
+
+	args := map[string]any{
+		"session_id": chat.SessionId.String(),
+		"role":       "user",
+		"parts":      parts,
+		"files":      filesArg,
+	}
+
+	if _, err := a.toolProvider.Call(ctx, "add_message", args); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return nil
+}
+
+func (a *V1Agent) takeTurns(ctx context.Context, chat *v1chat.Chat) (string, []string, error) {
+	ctx, span := a.tracer.Start(ctx, "agent.takeTurns")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("session_id", chat.SessionId.String()))
 
 	availableTools, err := a.toolProvider.List(ctx)
 	if err != nil {
@@ -85,12 +136,24 @@ func (a *V1Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input stri
 		})
 	}
 
-	sessionContext := fmt.Sprintf("Current Session ID: %s\n", sessionId.String())
+	sessionContext := fmt.Sprintf("Current Session ID: %s\n", chat.SessionId.String())
 	fullInstructions := sessionContext + a.instructions
+
+	userParts := []llms.ContentPart{
+		llms.TextPart(chat.Text),
+	}
+
+	for fname, content := range chat.Files {
+		fileMsg := fmt.Sprintf("\n\n--- ATTACHED FILE: %s ---\n%s\n--- END ATTACHMENT ---\n", fname, content)
+		userParts = append(userParts, llms.TextPart(fileMsg))
+	}
 
 	history := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, fullInstructions),
-		llms.TextParts(llms.ChatMessageTypeHuman, input),
+		{
+			Role:  llms.ChatMessageTypeHuman,
+			Parts: userParts,
+		},
 	}
 
 	var toolCallsLog []string
@@ -157,6 +220,9 @@ func (a *V1Agent) TakeTurns(ctx context.Context, sessionId uuid.UUID, input stri
 
 		// Append the LLM's response to history
 		var parts []llms.ContentPart
+		if len(choice.Content) > 0 {
+			parts = append(parts, llms.TextPart(choice.Content))
+		}
 		for _, tc := range choice.ToolCalls {
 			parts = append(parts, llms.ToolCall{ID: tc.ID, Type: tc.Type, FunctionCall: tc.FunctionCall})
 		}
