@@ -40,7 +40,7 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 		span.SetAttributes(attribute.String("space.id", in.SpaceId.String()))
 	}
 
-	asset, err := s.filer.UploadReader(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
+	asset, err := s.filer.Upload(ctx, in.Reader, in.Filename, in.MimeType, in.Size)
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
