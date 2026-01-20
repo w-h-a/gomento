@@ -1,7 +1,9 @@
 package v1file
 
 import (
+	"bufio"
 	"context"
+	"io"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,6 +68,80 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 	span.SetAttributes(attribute.String("file.id", file.Id.String()))
 
 	return file, nil
+}
+
+func (s *V1Service) Download(ctx context.Context, in ReadFileInput) (io.ReadCloser, error) {
+	ctx, span := s.tracer.Start(ctx, "file.Download")
+
+	span.SetAttributes(
+		attribute.String("file.id", in.FileId.String()),
+		attribute.Int("read.start_line", in.StartLine),
+		attribute.Int("read.end_line", in.EndLine),
+	)
+
+	file, err := s.persister.GetFile(ctx, in.FileId)
+	if err != nil {
+		span.RecordError(err)
+		span.End()
+		return nil, err
+	}
+	if file == nil {
+		span.End()
+		return nil, service.ErrFileNotFound
+	}
+	if file.Asset == nil {
+		err := service.ErrFileNotUploaded
+		span.RecordError(err)
+		span.End()
+		return nil, err
+	}
+
+	rc, err := s.filer.Download(ctx, file.Asset.Path)
+	if err != nil {
+		span.RecordError(err)
+		span.End()
+		return nil, err
+	}
+
+	pipeReader, pipeWriter := io.Pipe()
+
+	go func() {
+		var err error
+		defer func() {
+			rc.Close()
+			pipeWriter.CloseWithError(err)
+			span.End()
+		}()
+
+		scanner := bufio.NewScanner(rc)
+		lineNum := 1
+
+		start := max(in.StartLine, 1)
+
+		for scanner.Scan() {
+			if in.EndLine > 0 && lineNum > in.EndLine {
+				break
+			}
+
+			if lineNum >= start {
+				if _, writeErr := pipeWriter.Write(scanner.Bytes()); writeErr != nil {
+					err = writeErr
+					return
+				}
+
+				if _, writeErr := pipeWriter.Write([]byte{'\n'}); writeErr != nil {
+					err = writeErr
+					return
+				}
+			}
+
+			lineNum++
+		}
+
+		err = scanner.Err()
+	}()
+
+	return pipeReader, nil
 }
 
 func (s *V1Service) List(ctx context.Context, in ListFilesInput) (*ListFilesOutput, error) {

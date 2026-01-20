@@ -54,7 +54,7 @@ graph TD
     %% Flow 3: Retrieval (Within a Session)
     Agent -- "8. Get Tasks & Messages Within Session" --> API
     API -- "9. Fetch Session History" --> Postgres
-    API -- "10. Presign URLs" --> MinIO
+    API -- "10. Download/Presign URLs" --> MinIO
     API -- "11. Return Session History" --> Agent
 
     %% Flow 4: Retrieval (Across Sessions)

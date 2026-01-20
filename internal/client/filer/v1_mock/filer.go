@@ -1,6 +1,7 @@
 package v1mock
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -14,7 +15,7 @@ import (
 
 type v1MockFiler struct {
 	options filer.Options
-	uploads map[string]int64
+	uploads map[string][]byte
 	mtx     sync.RWMutex
 }
 
@@ -24,7 +25,12 @@ func (f *v1MockFiler) Upload(ctx context.Context, r io.ReadSeeker, filename, con
 
 	path := "uploads/" + filename
 
-	f.uploads[path] = size
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	f.uploads[path] = data
 
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -34,14 +40,14 @@ func (f *v1MockFiler) Upload(ctx context.Context, r io.ReadSeeker, filename, con
 		Container: f.options.Container,
 		Path:      path,
 		MIME:      contentType,
-		SizeBytes: size,
+		SizeBytes: int64(len(data)),
 	}, nil
 }
 
-func (f *v1MockFiler) Uploads() map[string]int64 {
+func (f *v1MockFiler) Uploads() map[string][]byte {
 	f.mtx.RLock()
 	defer f.mtx.RUnlock()
-	cpy := make(map[string]int64, len(f.uploads))
+	cpy := make(map[string][]byte, len(f.uploads))
 	maps.Copy(cpy, f.uploads)
 	return cpy
 }
@@ -50,14 +56,12 @@ func (f *v1MockFiler) Download(ctx context.Context, path string) (io.ReadCloser,
 	f.mtx.RLock()
 	defer f.mtx.RUnlock()
 
-	if _, ok := f.uploads[path]; !ok {
+	data, ok := f.uploads[path]
+	if !ok {
 		return nil, fmt.Errorf("mock file not found: %s", path)
 	}
 
-	r, w := io.Pipe()
-	w.Close()
-
-	return r, nil
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 func (f *v1MockFiler) PresignGet(ctx context.Context, path string, expire time.Duration) (string, error) {
@@ -69,7 +73,7 @@ func NewV1Filer(opts ...filer.Option) *v1MockFiler {
 
 	f := &v1MockFiler{
 		options: options,
-		uploads: map[string]int64{},
+		uploads: map[string][]byte{},
 		mtx:     sync.RWMutex{},
 	}
 
