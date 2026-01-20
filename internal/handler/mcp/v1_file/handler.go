@@ -3,6 +3,8 @@ package v1file
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 
 	"github.com/google/uuid"
@@ -10,6 +12,10 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/w-h-a/gomento/internal/service"
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
+)
+
+const (
+	maxReadBytes = 64 * 1024
 )
 
 type v1Handler struct {
@@ -83,6 +89,80 @@ func (h *v1Handler) upload(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 	}
 
 	return mcp.NewToolResultJSON(f)
+}
+
+func (h *v1Handler) DownloadTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "read_file",
+			Description: "Read the content of a file. You can read the whole file or specify a line range to save context. Output is truncated at 64KB.",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"file_id":    map[string]string{"type": "string", "description": "The UUID of the file."},
+					"start_line": map[string]string{"type": "integer", "description": "The line number to start reading from (1-based). Default is 1."},
+					"end_line":   map[string]string{"type": "integer", "description": "The line number to stop reading at. If omitted, reads to the end."},
+				},
+				Required: []string{"file_id"},
+			},
+		},
+		Handler: h.download,
+	}
+}
+
+func (h *v1Handler) download(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid args"), nil
+	}
+
+	fileIdStr, ok := args["file_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing 'file_id'"), nil
+	}
+
+	fileId, err := uuid.Parse(fileIdStr)
+	if err != nil {
+		return mcp.NewToolResultError("invalid file_id"), nil
+	}
+
+	var startLine int
+	if s, ok := args["start_line"].(float64); ok {
+		startLine = int(s)
+	}
+
+	var endLine int
+	if e, ok := args["end_line"].(float64); ok {
+		endLine = int(e)
+	}
+
+	rc, err := h.service.Download(ctx, v1file.ReadFileInput{
+		FileId:    fileId,
+		StartLine: startLine,
+		EndLine:   endLine,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrFileNotFound) {
+			return mcp.NewToolResultError("file not found"), nil
+		}
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	defer rc.Close()
+
+	limitedReader := io.LimitReader(rc, maxReadBytes+1)
+
+	content, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("error reading stream: %v", err)), nil
+	}
+
+	output := string(content)
+
+	if len(content) > maxReadBytes {
+		output = string(content[:maxReadBytes]) + "\n... [TRUNCATED due to size. Use 'start_line' and 'end_line' to read specific sections.]"
+	}
+
+	return mcp.NewToolResultText(output), nil
 }
 
 func (h *v1Handler) ListTool() server.ServerTool {

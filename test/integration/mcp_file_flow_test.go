@@ -335,4 +335,48 @@ func TestAPI_Mcp_File_Flow(t *testing.T) {
 
 	assert.Len(t, filteredList.Items, 1)
 	assert.Equal(t, "main.go", filteredList.Items[0].Filename)
+
+	// ==========================================
+	// Scenario 7: Read File Content via MCP
+	// ==========================================
+	t.Log("Step 7: Reading Content via MCP Tool")
+
+	// 1. Upload
+	toolName = "upload_file"
+	result, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: toolName,
+			Arguments: map[string]any{
+				"filename": "readme.md",
+				"content":  "# Header\n\nBody text\nFooter",
+				"path":     "/",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	var readmeFile map[string]any
+	json.Unmarshal([]byte(result.Content[0].(mcp.TextContent).Text), &readmeFile)
+	readmeId := readmeFile["id"].(string)
+
+	// 2. Read lines 3-4 (Body text + Footer)
+	toolName = "read_file"
+	result, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: toolName,
+			Arguments: map[string]any{
+				"file_id":    readmeId,
+				"start_line": 3,
+				"end_line":   4,
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, result.IsError)
+
+	textContent, ok = result.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	expectedRead := "Body text\nFooter\n"
+	assert.Equal(t, expectedRead, textContent.Text)
 }

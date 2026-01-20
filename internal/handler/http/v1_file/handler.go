@@ -3,7 +3,9 @@ package v1file
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -55,6 +57,48 @@ func (h *v1Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, f)
+}
+
+func (h *v1Handler) Download(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["file_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid File ID")
+		return
+	}
+
+	var startLine, endLine int
+
+	if s := r.URL.Query().Get("start_line"); len(s) > 0 {
+		if i, err := strconv.Atoi(s); err == nil {
+			startLine = i
+		}
+	}
+
+	if s := r.URL.Query().Get("end_line"); len(s) > 0 {
+		if i, err := strconv.Atoi(s); err == nil {
+			endLine = i
+		}
+	}
+
+	rc, err := h.service.Download(r.Context(), v1file.ReadFileInput{
+		FileId:    id,
+		StartLine: startLine,
+		EndLine:   endLine,
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrFileNotFound) {
+			httphandler.WrtErr(w, http.StatusNotFound, "File not found")
+			return
+		}
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rc.Close()
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, rc)
 }
 
 func (h *v1Handler) List(w http.ResponseWriter, r *http.Request) {
