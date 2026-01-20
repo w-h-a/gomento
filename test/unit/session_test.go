@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,7 +117,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 
 	// Act
 	inputFiles := map[string]v1session.InputFile{
-		"my_file": {Filename: "log.txt", Size: 100},
+		"my_file": {Filename: "log.txt", Size: 100, Reader: strings.NewReader(strings.Repeat("a", 100))},
 	}
 	input := v1session.SendMessageInput{
 		SessionId: sessionId,

@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -130,6 +131,127 @@ func TestUploadFile_Upserts(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, savedFiles, 1, "Should verify no duplicates exist")
 	assert.Equal(t, file2.AssetId, savedFiles[0].AssetId, "Persistence should point to newest asset")
+}
+
+func TestDownload_RetrievesFullContent(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+	s := v1file.NewV1Service(p, f)
+
+	ctx := context.Background()
+
+	content := "line1\nline2\nline3"
+	uploadedFile, err := s.Upload(ctx, v1file.CreateFileInput{
+		Filename: "test.txt",
+		Reader:   strings.NewReader(content),
+		Size:     int64(len(content)),
+	})
+	require.NoError(t, err)
+
+	// Act
+	rc, err := s.Download(ctx, v1file.ReadFileInput{
+		FileId: uploadedFile.Id,
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	// Assert
+	data, err := io.ReadAll(rc)
+	assert.NoError(t, err)
+	expected := "line1\nline2\nline3\n"
+	assert.Equal(t, expected, string(data))
+}
+
+func TestDownload_FiltersByLines(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+	s := v1file.NewV1Service(p, f)
+
+	ctx := context.Background()
+
+	content := "line1\nline2\nline3\nline4\nline5"
+	uploadedFile, _ := s.Upload(ctx, v1file.CreateFileInput{
+		Filename: "test.txt",
+		Reader:   strings.NewReader(content),
+		Size:     int64(len(content)),
+	})
+
+	// Act
+	rc, err := s.Download(ctx, v1file.ReadFileInput{
+		FileId:    uploadedFile.Id,
+		StartLine: 2,
+		EndLine:   4,
+	})
+	require.NoError(t, err)
+	defer rc.Close()
+
+	// Assert
+	data, err := io.ReadAll(rc)
+	assert.NoError(t, err)
+	expected := "line2\nline3\nline4\n"
+	assert.Equal(t, expected, string(data))
+}
+
+func TestDownload_FailsIfFileNotFound(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+	s := v1file.NewV1Service(p, f)
+	ctx := context.Background()
+
+	// Act
+	rc, err := s.Download(ctx, v1file.ReadFileInput{
+		FileId: uuid.New(),
+	})
+
+	// Assert
+	assert.ErrorIs(t, err, service.ErrFileNotFound)
+	assert.Nil(t, rc)
+}
+
+func TestDownload_PropagatesStreamErrors(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	f := v1mockfiler.NewV1Filer()
+	s := v1file.NewV1Service(p, f)
+	ctx := context.Background()
+
+	fileId := uuid.New()
+	p.UpsertFileWithAsset(ctx, &v1.File{
+		Id: fileId, Filename: "ghost.txt",
+	}, &v1.Asset{
+		Id: uuid.New(), Path: "ghost/path",
+	})
+
+	// Act
+	rc, err := s.Download(ctx, v1file.ReadFileInput{FileId: fileId})
+
+	// Assert
+	assert.Error(t, err)
+	assert.Nil(t, rc)
+	assert.Contains(t, err.Error(), "mock file not found")
 }
 
 func TestListFiles_FiltersByScope(t *testing.T) {
