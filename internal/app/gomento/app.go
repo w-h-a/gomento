@@ -366,6 +366,7 @@ func RegisterV1McpHandlers(
 	fileHandler := v1filemcphandler.NewV1Handler(file)
 	fileTools := []mcp.ServerTool{
 		fileHandler.UploadTool(),
+		fileHandler.DownloadTool(),
 		fileHandler.ListTool(),
 		fileHandler.GetTool(),
 		fileHandler.ConnectToSpaceTool(),
@@ -442,6 +443,7 @@ func RegisterV1HttpHandlers(
 
 	fileHandler := v1filehttphandler.NewV1Handler(file)
 	v1.Methods("POST").Path("/files").HandlerFunc(fileHandler.Upload)
+	v1.Methods("GET").Path("/files/{file_id}/content").HandlerFunc(fileHandler.Download)
 	v1.Methods("GET").Path("/files").HandlerFunc(fileHandler.List)
 	v1.Methods("GET").Path("/files/{file_id}").HandlerFunc(fileHandler.Get)
 	v1.Methods("POST").Path("/files/{file_id}/connect_to_space").HandlerFunc(fileHandler.ConnectToSpace)

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -252,4 +253,41 @@ func TestAPI_Http_File_Flow(t *testing.T) {
 
 	assert.Len(t, filteredList.Items, 1)
 	assert.Equal(t, "main.go", filteredList.Items[0].Filename)
+
+	// ==========================================
+	// Scenario 7: Download Content with Line Filtering
+	// ==========================================
+	t.Log("Step 7: Downloading Content via HTTP")
+
+	// 1. Upload a multi-line file
+	body = &bytes.Buffer{}
+	writer = multipart.NewWriter(body)
+	part, _ = writer.CreateFormFile("file", "lines.txt")
+	part.Write([]byte("line1\nline2\nline3\nline4"))
+	writer.Close()
+
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/files", baseURL), body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	linesRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer linesRsp.Body.Close()
+
+	var linesFile map[string]any
+	json.NewDecoder(linesRsp.Body).Decode(&linesFile)
+	linesId := linesFile["id"].(string)
+
+	// 2. Download specific lines (2-3)
+	downloadUrl := fmt.Sprintf("%s/api/v1/files/%s/content?start_line=2&end_line=3", baseURL, linesId)
+	req, _ = http.NewRequest("GET", downloadUrl, nil)
+	dlRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer dlRsp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, dlRsp.StatusCode)
+
+	contentBytes, err := io.ReadAll(dlRsp.Body)
+	require.NoError(t, err)
+
+	expectedContent := "line2\nline3\n"
+	assert.Equal(t, expectedContent, string(contentBytes))
 }
