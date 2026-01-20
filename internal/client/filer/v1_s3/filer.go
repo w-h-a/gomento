@@ -28,7 +28,7 @@ type v1S3Filer struct {
 	presigner *s3.PresignClient
 }
 
-func (f *v1S3Filer) UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
+func (f *v1S3Filer) Upload(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error) {
 	if len(contentType) == 0 {
 		contentType = "application/octet-stream"
 	}
@@ -73,6 +73,18 @@ func (f *v1S3Filer) UploadReader(ctx context.Context, r io.ReadSeeker, filename,
 		MIME:      contentType,
 		SHA256:    sumHex,
 	}, nil
+}
+
+func (f *v1S3Filer) Download(ctx context.Context, path string) (io.ReadCloser, error) {
+	obj, err := f.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(f.options.Container),
+		Key:    aws.String(path),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get object: %w", err)
+	}
+
+	return obj.Body, nil
 }
 
 func (f *v1S3Filer) PresignGet(ctx context.Context, path string, expire time.Duration) (string, error) {

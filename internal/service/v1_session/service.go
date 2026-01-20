@@ -175,7 +175,7 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 			return nil, err
 		}
 
-		asset, err := s.filer.UploadReader(
+		asset, err := s.filer.Upload(
 			ctx,
 			inputFile.Reader,
 			inputFile.Filename,

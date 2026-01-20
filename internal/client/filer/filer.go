@@ -9,6 +9,7 @@ import (
 )
 
 type V1Filer interface {
-	UploadReader(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error)
+	Upload(ctx context.Context, r io.ReadSeeker, filename, contentType string, size int64) (*v1.Asset, error)
+	Download(ctx context.Context, path string) (io.ReadCloser, error)
 	PresignGet(ctx context.Context, path string, expire time.Duration) (string, error)
 }
