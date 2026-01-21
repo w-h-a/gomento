@@ -8,8 +8,9 @@ import (
 )
 
 const (
-	JobTypeDistill = "distill_session"
-	JobTypeExtract = "extract_session"
+	JobTypeDistill    = "distill_session"
+	JobTypeExtract    = "extract_session"
+	JobTypeIngestFile = "ingest_file"
 
 	JobStatusPending = "pending"
 	JobStatusRunning = "running"
@@ -26,9 +27,14 @@ type Job struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
-type JobPayload struct {
+type SessionJobPayload struct {
 	SessionId     uuid.UUID `json:"session_id"`
 	MessageWindow int       `json:"message_window,omitempty"`
+}
+
+type IngestFileJobPayload struct {
+	FileId  uuid.UUID  `json:"file_id"`
+	SpaceId *uuid.UUID `json:"space_id,omitempty"`
 }
 
 type Space struct {

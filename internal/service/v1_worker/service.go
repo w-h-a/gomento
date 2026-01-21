@@ -63,24 +63,26 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 		return err
 	}
 
-	var payload v1.JobPayload
-	if err := json.Unmarshal(job.Payload, &payload); err != nil {
-		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-		span.RecordError(err)
-		return fmt.Errorf("invalid job payload: %w", err)
-	}
-
-	span.SetAttributes(attribute.String("session.id", payload.SessionId.String()))
-
-	if job.Type == v1.JobTypeExtract {
+	switch job.Type {
+	case v1.JobTypeExtract:
+		var payload v1.SessionJobPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return fmt.Errorf("invalid job payload: %w", err)
+		}
 		if err := s.extract(ctx, payload.SessionId, payload.MessageWindow); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 			span.RecordError(err)
 			return err
 		}
-	}
-
-	if job.Type == v1.JobTypeDistill {
+	case v1.JobTypeDistill:
+		var payload v1.SessionJobPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return fmt.Errorf("invalid job payload: %w", err)
+		}
 		if err := s.distill(ctx, payload.SessionId, payload.MessageWindow); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 			span.RecordError(err)

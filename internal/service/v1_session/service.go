@@ -365,7 +365,7 @@ func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, messag
 	ctx, span := s.tracer.Start(ctx, "session.dispatchJob")
 	defer span.End()
 
-	payload := v1.JobPayload{
+	payload := v1.SessionJobPayload{
 		SessionId:     sessionId,
 		MessageWindow: messageWindow,
 	}
