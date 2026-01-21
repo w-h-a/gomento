@@ -46,6 +46,7 @@ type V1Persister interface {
 	ListFiles(ctx context.Context, spaceId *uuid.UUID, opts ...ListFilesOption) ([]v1.File, error)
 	GetFile(ctx context.Context, id uuid.UUID) (*v1.File, error)
 	UpdateFileSpace(ctx context.Context, file *v1.File) error
+	UpdateFileEmbedding(ctx context.Context, id uuid.UUID, vector []float32) error
 
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 }
