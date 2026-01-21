@@ -95,6 +95,7 @@ type File struct {
 	Path      string          `json:"path"`
 	Filename  string          `json:"filename"`
 	Meta      json.RawMessage `json:"meta"`
+	Embedding []float32       `json:"embedding"`
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	Asset     *Asset          `json:"asset,omitempty"`
