@@ -856,6 +856,12 @@ func (p *v1PGPersister) UpdateFileSpace(ctx context.Context, file *v1.File) erro
 	return err
 }
 
+func (p *v1PGPersister) UpdateFileEmbedding(ctx context.Context, id uuid.UUID, vec []float32) error {
+	query := `UPDATE files SET embedding = $1 WHERE id = $2`
+	_, err := p.conn.ExecContext(ctx, query, pgvector.NewVector(vec), id)
+	return err
+}
+
 func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	if len(ids) == 0 {
 		return map[uuid.UUID]*v1.Asset{}, nil

@@ -554,6 +554,15 @@ func (p *v1MockPersister) UpdateFileSpace(ctx context.Context, file *v1.File) er
 	return nil
 }
 
+func (p *v1MockPersister) UpdateFileEmbedding(ctx context.Context, id uuid.UUID, vector []float32) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if existing, ok := p.files[id]; ok {
+		existing.Embedding = vector
+	}
+	return nil
+}
+
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
