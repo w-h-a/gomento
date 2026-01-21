@@ -49,7 +49,7 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
 
 	// 3. Create Job
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeExtract,
@@ -103,7 +103,7 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 	})
 
 	// 3. Create Job
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeExtract,
@@ -151,7 +151,7 @@ func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeExtract,
@@ -205,7 +205,7 @@ func TestProcessJob_Distill_DistillsSkillsOnly(t *testing.T) {
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
@@ -268,7 +268,7 @@ func TestProcessJob_Distill_InsertsNewSkill(t *testing.T) {
 		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "fix nginx"}},
 	}, nil)
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
@@ -340,7 +340,7 @@ func TestProcessJob_Distill_UpdatesExistingSkill(t *testing.T) {
 
 	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), i, e)
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
@@ -391,7 +391,7 @@ func TestProcessJob_Distill_IncludesSkillContext(t *testing.T) {
 	_ = p.SaveSkill(ctx, existingSkill)
 
 	// 3. Create Job
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
@@ -439,7 +439,7 @@ func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
@@ -509,7 +509,7 @@ func TestProcessJob_ProcessingOrder(t *testing.T) {
 	}
 	p.CreateMessageWithAssets(ctx, msg2, nil)
 
-	payload := v1.JobPayload{SessionId: sessionId}
+	payload := v1.SessionJobPayload{SessionId: sessionId}
 	data, _ := json.Marshal(payload)
 	job := &v1.Job{Id: uuid.New(), Type: v1.JobTypeDistill, Payload: data, Status: v1.JobStatusPending}
 	p.CreateJob(ctx, job)
@@ -547,7 +547,7 @@ func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
 		SpaceId: nil,
 	})
 
-	payload, _ := json.Marshal(v1.JobPayload{SessionId: sessionId})
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeDistill,
