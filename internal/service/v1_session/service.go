@@ -395,7 +395,12 @@ func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, messag
 		return fmt.Errorf("failed to persist job: %w", err)
 	}
 
-	return s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.qname))
+	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.qname)); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to publish job: %w", err)
+	}
+
+	return nil
 }
 
 func NewV1Service(

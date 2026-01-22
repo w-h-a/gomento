@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/embedder"
+	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -19,10 +21,15 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	maxFileBytes = 10 * 1024
+)
+
 type V1Service struct {
 	*service.Service
-	dispatcher  dispatcher.V1Dispatcher
 	persister   persister.V1Persister
+	dispatcher  dispatcher.V1Dispatcher
+	filer       filer.V1Filer
 	interpreter interpreter.V1Interpreter
 	embedder    embedder.Embedder
 	tracer      trace.Tracer
@@ -56,7 +63,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 		return fmt.Errorf("failed to acquire job lock: %w", err)
 	}
 
-	if job.Type != v1.JobTypeDistill && job.Type != v1.JobTypeExtract {
+	if job.Type != v1.JobTypeDistill && job.Type != v1.JobTypeExtract && job.Type != v1.JobTypeIngestFile {
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 		err := fmt.Errorf("unknown job type: %s", job.Type)
 		span.RecordError(err)
@@ -88,6 +95,18 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 			span.RecordError(err)
 			return err
 		}
+	case v1.JobTypeIngestFile:
+		var payload v1.IngestFileJobPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return fmt.Errorf("invalid job payload: %w", err)
+		}
+		if err := s.ingestFile(ctx, payload.FileId, payload.SpaceId); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return err
+		}
 	}
 
 	slog.InfoContext(ctx, "job success", "job_id", job.Id)
@@ -106,7 +125,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 	if sess == nil {
-		return fmt.Errorf("session %v not found", sessionId)
+		return service.ErrSessionNotFound
 	}
 
 	var files []v1.File
@@ -338,7 +357,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 	if sess == nil {
-		return fmt.Errorf("session %v not found", sessionId)
+		return service.ErrSessionNotFound
 	}
 
 	if sess.SpaceId == nil {
@@ -464,9 +483,55 @@ func (s *V1Service) executeSkillAction(ctx context.Context, sess *v1.Session, ac
 	}
 }
 
+func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID, spaceId *uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "worker.ingestFile")
+	defer span.End()
+
+	file, err := s.persister.GetFile(ctx, fileId)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+	if file == nil {
+		return service.ErrFileNotFound
+	}
+	if file.Asset == nil {
+		return service.ErrFileNotUploaded
+	}
+
+	rc, err := s.filer.Download(ctx, file.Asset.Path)
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+
+	// TODO: use file chunking instead
+	content, err := io.ReadAll(io.LimitReader(rc, maxFileBytes))
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	text := string(content)
+	if len(text) == 0 {
+		return nil
+	}
+
+	document := fmt.Sprintf("Filename: %s\n\nContent:\n%s", file.Filename, text)
+
+	vec, err := s.embedder.Embed(ctx, document)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return s.persister.UpdateFileEmbedding(ctx, file.Id, vec)
+}
+
 func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
+	f filer.V1Filer,
 	i interpreter.V1Interpreter,
 	e embedder.Embedder,
 ) *V1Service {
@@ -475,6 +540,7 @@ func NewV1Service(
 		Service:     s,
 		persister:   p,
 		dispatcher:  d,
+		filer:       f,
 		interpreter: i,
 		embedder:    e,
 		tracer:      otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_worker"),

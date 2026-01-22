@@ -26,10 +26,11 @@ import (
 )
 
 type CLI struct {
-	Mode    string `env:"MODE" default:""`
-	Name    string `env:"NAME" default:"gomento"`
-	Version string `env:"VERSION" default:"v0.1.0"`
-	QName   string `env:"Q_NAME" default:"worker"`
+	Mode         string `env:"MODE" default:""`
+	Name         string `env:"NAME" default:"gomento"`
+	Version      string `env:"VERSION" default:"v0.1.0"`
+	SessionQName string `env:"SESSION_Q_NAME" default:"session"`
+	FileQName    string `env:"FILE_Q_NAME" default:"file"`
 
 	LogsExporterLocation   string `env:"LOGS_EXPORTER_LOCATION" default:"stdout"`
 	TracesExporterLocation string `env:"TRACES_EXPORTER_LOCATION" default:"jaeger:4318"`
@@ -134,6 +135,12 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 			ctx,
 			disp,
 			cli.PersisterLocation,
+			cli.FilerEndpoint,
+			cli.FilerPublicEndpoint,
+			cli.FilerRegion,
+			cli.FilerContainer,
+			cli.FilerUser,
+			cli.FilerPassword,
 			cli.OpenAIAPIKey,
 			cli.InterpreterModel,
 			cli.EmbedderModel,
@@ -177,7 +184,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 			cli.FilerPassword,
 			cli.OpenAIAPIKey,
 			cli.EmbedderModel,
-			cli.QName,
+			cli.SessionQName,
 		)
 		if err != nil {
 			return err
@@ -187,12 +194,16 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		fileService, err = gomento.InitV1FileService(
 			ctx,
 			cli.PersisterLocation,
+			disp,
 			cli.FilerEndpoint,
 			cli.FilerPublicEndpoint,
 			cli.FilerRegion,
 			cli.FilerContainer,
 			cli.FilerUser,
 			cli.FilerPassword,
+			cli.OpenAIAPIKey,
+			cli.EmbedderModel,
+			cli.FileQName,
 		)
 		if err != nil {
 			return err
@@ -239,7 +250,13 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 			errCh <- workerService.Run(
 				stopChannels["worker"],
 				func() error {
-					return workerService.Subscribe(ctx, workerService.ProcessJob, cli.QName)
+					if err := workerService.Subscribe(ctx, workerService.ProcessJob, cli.SessionQName); err != nil {
+						return err
+					}
+					if err := workerService.Subscribe(ctx, workerService.ProcessJob, cli.FileQName); err != nil {
+						return err
+					}
+					return nil
 				},
 				func(ctx context.Context) error {
 					return workerService.Close(ctx)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
 	mockembedder "github.com/w-h-a/gomento/internal/client/embedder/mock"
+	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/interpreter"
 	v1mockinterpreter "github.com/w-h-a/gomento/internal/client/interpreter/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
@@ -31,7 +33,7 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	ctx := context.Background()
 
@@ -81,7 +83,7 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	ctx := context.Background()
 	spaceId := uuid.New()
@@ -144,7 +146,7 @@ func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
 		),
 	)
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -197,7 +199,7 @@ func TestProcessJob_Distill_DistillsSkillsOnly(t *testing.T) {
 		),
 	)
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	spaceId := uuid.New()
 	sessionId := uuid.New()
@@ -254,8 +256,7 @@ func TestProcessJob_Distill_InsertsNewSkill(t *testing.T) {
 		),
 	)
 	e := mockembedder.NewEmbedder()
-
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	spaceId := uuid.New()
 	sessionId := uuid.New()
@@ -337,8 +338,7 @@ func TestProcessJob_Distill_UpdatesExistingSkill(t *testing.T) {
 			},
 		),
 	)
-
-	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), i, e)
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), i, e)
 
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
@@ -372,7 +372,7 @@ func TestProcessJob_Distill_IncludesSkillContext(t *testing.T) {
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	ctx := context.Background()
 	spaceId := uuid.New()
@@ -429,8 +429,7 @@ func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 		),
 	)
 	e := mockembedder.NewEmbedder(mockembedder.WithError(errors.New("openai down")))
-
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	ctx := context.Background()
 
@@ -457,6 +456,57 @@ func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 	assert.Len(t, p.Skills(), 0)
 }
 
+func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, f, v1mockinterpreter.NewV1Interpreter(), e)
+
+	ctx := context.Background()
+
+	fileId := uuid.New()
+	content := "This is the file content"
+
+	asset, err := f.Upload(ctx, strings.NewReader(content), "doc.txt", "text/plain", int64(len(content)))
+	require.NoError(t, err)
+
+	err = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		Filename: "doc.txt",
+	}, asset)
+	require.NoError(t, err)
+
+	payload, _ := json.Marshal(v1.IngestFileJobPayload{FileId: fileId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeIngestFile,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	err = p.CreateJob(ctx, job)
+	require.NoError(t, err)
+
+	// Act
+	err = s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updatedJob := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updatedJob.Status)
+
+	updatedFile, err := p.GetFile(ctx, fileId)
+	assert.NoError(t, err)
+	assert.NotNil(t, updatedFile)
+	assert.Equal(t, float32(0.01), updatedFile.Embedding[0])
+}
+
 func TestProcessJob_ProcessingOrder(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -480,7 +530,7 @@ func TestProcessJob_ProcessingOrder(t *testing.T) {
 		),
 	)
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	sessionId := uuid.New()
 	spaceId := uuid.New()
@@ -536,7 +586,7 @@ func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, d, i, e)
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -574,7 +624,7 @@ func TestProcessJob_EnforcesJobLock(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
 
 	job := &v1.Job{
 		Id:     uuid.New(),
@@ -600,7 +650,7 @@ func TestProcessJob_IgnoresUnknownTaskTypes(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
+	s := v1worker.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
 
 	job := &v1.Job{
 		Id:     uuid.New(),
