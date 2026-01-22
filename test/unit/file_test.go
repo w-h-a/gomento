@@ -2,6 +2,7 @@ package unit
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"strings"
@@ -11,13 +12,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
+	mockembedder "github.com/w-h-a/gomento/internal/client/embedder/mock"
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	"github.com/w-h-a/gomento/internal/service"
 	v1file "github.com/w-h-a/gomento/internal/service/v1_file"
 )
 
-func TestUploadFile_Global(t *testing.T) {
+func TestUpload_Global(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -26,7 +29,8 @@ func TestUploadFile_Global(t *testing.T) {
 	// 1. Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// 2. Act
@@ -54,7 +58,7 @@ func TestUploadFile_Global(t *testing.T) {
 	assert.Equal(t, file.Id, savedFiles[0].Id)
 }
 
-func TestUploadFile_Space(t *testing.T) {
+func TestUpload_Space(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -63,7 +67,8 @@ func TestUploadFile_Space(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	spaceId := uuid.New()
@@ -88,7 +93,7 @@ func TestUploadFile_Space(t *testing.T) {
 	assert.Equal(t, spaceId, *savedFiles[0].SpaceId)
 }
 
-func TestUploadFile_Upserts(t *testing.T) {
+func TestUpload_Upserts(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -97,7 +102,8 @@ func TestUploadFile_Upserts(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// 1. First Upload
@@ -133,6 +139,44 @@ func TestUploadFile_Upserts(t *testing.T) {
 	assert.Equal(t, file2.AssetId, savedFiles[0].AssetId, "Persistence should point to newest asset")
 }
 
+func TestUpload_DispatchesIngestJob(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	s := v1file.NewV1Service(p, d, f, mockembedder.NewEmbedder(), "q")
+
+	ctx := context.Background()
+
+	// Act
+	content := "package main\nfunc main() {}"
+	file, err := s.Upload(ctx, v1file.CreateFileInput{
+		Filename: "main.go",
+		Reader:   strings.NewReader(content),
+		Size:     int64(len(content)),
+	})
+	require.NoError(t, err)
+
+	// Assert
+	jobs := d.Jobs()
+	assert.Len(t, jobs, 1)
+
+	job := jobs[0]
+	assert.Equal(t, v1.JobTypeIngestFile, job.Type)
+
+	var payload v1.IngestFileJobPayload
+	err = json.Unmarshal(job.Payload, &payload)
+	assert.NoError(t, err)
+
+	assert.Equal(t, file.Id, payload.FileId)
+	assert.Nil(t, payload.SpaceId)
+}
+
 func TestDownload_RetrievesFullContent(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -142,7 +186,7 @@ func TestDownload_RetrievesFullContent(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
 
 	ctx := context.Background()
 
@@ -177,7 +221,7 @@ func TestDownload_FiltersByLines(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
 
 	ctx := context.Background()
 
@@ -213,7 +257,8 @@ func TestDownload_FailsIfFileNotFound(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// Act
@@ -235,7 +280,8 @@ func TestDownload_PropagatesStreamErrors(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	fileId := uuid.New()
@@ -263,7 +309,8 @@ func TestListFiles_FiltersByScope(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	spaceId := uuid.New()
@@ -304,7 +351,8 @@ func TestListFiles_FiltersByPath(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	spaceId := uuid.New()
@@ -341,7 +389,8 @@ func TestGetFile_ById(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	fileId := uuid.New()
@@ -387,7 +436,8 @@ func TestConnectToSpace_File(t *testing.T) {
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
 	f := v1mockfiler.NewV1Filer()
-	s := v1file.NewV1Service(p, f)
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), f, mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// 1. Create Global File
@@ -419,7 +469,8 @@ func TestConnectToSpace_FailsIfFileMissing(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1file.NewV1Service(p, v1mockfiler.NewV1Filer())
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// Act
@@ -437,7 +488,8 @@ func TestConnectToSpace_FailsIfSpaceMissing(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1file.NewV1Service(p, v1mockfiler.NewV1Filer())
+	s := v1file.NewV1Service(p, v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), mockembedder.NewEmbedder(), "q")
+
 	ctx := context.Background()
 
 	// Create File

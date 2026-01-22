@@ -147,11 +147,30 @@ func InitV1Worker(
 	ctx context.Context,
 	disp dispatcher.V1Dispatcher,
 	persisterLocation string,
+	filerEndpoint string,
+	filerPublicEndpoint string,
+	filerRegion string,
+	filerContainer string,
+	filerUser string,
+	filerPassword string,
 	openAIAPIKey string,
 	interpreterModel string,
 	embedderModel string,
 ) (*v1workerservice.V1Service, error) {
 	p, err := InitV1Persister(ctx, persisterLocation)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := InitV1Filer(
+		ctx,
+		filerEndpoint,
+		filerPublicEndpoint,
+		filerRegion,
+		filerContainer,
+		filerUser,
+		filerPassword,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -177,6 +196,7 @@ func InitV1Worker(
 	workerService := v1workerservice.NewV1Service(
 		p,
 		disp,
+		f,
 		i,
 		e,
 	)
@@ -267,12 +287,16 @@ func InitV1SessionService(
 func InitV1FileService(
 	ctx context.Context,
 	persisterLocation string,
+	disp dispatcher.V1Dispatcher,
 	filerEndpoint string,
 	filerPublicEndpoint string,
 	filerRegion string,
 	filerContainer string,
 	filerUser string,
 	filerPassword string,
+	openAIAPIKey string,
+	embedderModel string,
+	qName string,
 ) (*v1fileservice.V1Service, error) {
 	p, err := InitV1Persister(ctx, persisterLocation)
 	if err != nil {
@@ -292,9 +316,21 @@ func InitV1FileService(
 		return nil, err
 	}
 
+	e, err := InitEmbedder(
+		ctx,
+		openAIAPIKey,
+		embedderModel,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	filerService := v1fileservice.NewV1Service(
 		p,
+		disp,
 		f,
+		e,
+		qName,
 	)
 
 	return filerService, nil

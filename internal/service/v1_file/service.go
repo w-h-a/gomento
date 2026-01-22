@@ -3,11 +3,15 @@ package v1file
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	"github.com/w-h-a/gomento/internal/client/dispatcher"
+	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -22,9 +26,12 @@ var (
 
 type V1Service struct {
 	*service.Service
-	persister persister.V1Persister
-	filer     filer.V1Filer
-	tracer    trace.Tracer
+	persister  persister.V1Persister
+	dispatcher dispatcher.V1Dispatcher
+	filer      filer.V1Filer
+	embedder   embedder.Embedder
+	tracer     trace.Tracer
+	qname      string
 }
 
 func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, error) {
@@ -67,7 +74,57 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 
 	span.SetAttributes(attribute.String("file.id", file.Id.String()))
 
+	if err := s.dispatchJob(ctx, file.Id, file.SpaceId); err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+
 	return file, nil
+}
+
+func (s *V1Service) dispatchJob(ctx context.Context, fileId uuid.UUID, spaceId *uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "file.dispatchJob")
+	defer span.End()
+
+	payload := v1.IngestFileJobPayload{
+		FileId:  fileId,
+		SpaceId: spaceId,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeIngestFile,
+		Payload: data,
+		Status:  v1.JobStatusPending,
+	}
+
+	span.SetAttributes(
+		attribute.String("file.id", fileId.String()),
+		attribute.String("job.id", job.Id.String()),
+		attribute.String("job.type", v1.JobTypeIngestFile),
+	)
+
+	if spaceId != nil {
+		span.SetAttributes(attribute.String("space.id", spaceId.String()))
+	}
+
+	if err := s.persister.CreateJob(ctx, job); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to persist job: %w", err)
+	}
+
+	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.qname)); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to publish job: %w", err)
+	}
+
+	return nil
 }
 
 func (s *V1Service) Download(ctx context.Context, in ReadFileInput) (io.ReadCloser, error) {
@@ -234,12 +291,21 @@ func (s *V1Service) ConnectToSpace(ctx context.Context, fileId uuid.UUID, spaceI
 	return s.persister.UpdateFileSpace(ctx, file)
 }
 
-func NewV1Service(p persister.V1Persister, f filer.V1Filer) *V1Service {
+func NewV1Service(
+	p persister.V1Persister,
+	d dispatcher.V1Dispatcher,
+	f filer.V1Filer,
+	e embedder.Embedder,
+	qname string,
+) *V1Service {
 	s := service.New()
 	return &V1Service{
-		Service:   s,
-		persister: p,
-		filer:     f,
-		tracer:    otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_file"),
+		Service:    s,
+		persister:  p,
+		dispatcher: d,
+		filer:      f,
+		embedder:   e,
+		tracer:     otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_file"),
+		qname:      qname,
 	}
 }
