@@ -25,15 +25,15 @@ type v1OpenaiInterpreter struct {
 	tracer  trace.Tracer
 }
 
-func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
+func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, files []v1.File, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Distill")
 	defer span.End()
 
-	slog.InfoContext(ctx, "distilling session", "message_count", messageWindow)
+	slog.InfoContext(ctx, "distilling session", "message_count", len(history), "file_count", len(files), "skill_count", len(currentSkills))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.distillSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, messageWindow, currentSkills)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, files, currentSkills)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -115,15 +115,15 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message,
 	return actions, nil
 }
 
-func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Extract")
 	defer span.End()
 
-	slog.InfoContext(ctx, "extracting tasks", "msg_count", messageWindow, "current_task_count", len(currentTasks))
+	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "file_count", len(files), "current_task_count", len(currentTasks))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.extractSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, messageWindow, files, currentTasks)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, files, currentTasks)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -222,7 +222,7 @@ Output MUST be a valid JSON object with keys "trigger" and "sop".
 {"trigger": "Description of the situation that necessitates the skill (e.g., Database connection refused)", "sop": "The generalized, step-by-step guide to solving the problem"}
 
 ## Input
-You will receive "Current Messages" (potential for new knowledge) and "Current Skills" (existing knowledge base).
+You will receive "Recent Messages" (potential for new knowledge) and "Current Skills" (existing knowledge base).
 
 ## Objectives
 1. Identify the core technical problem solved in the session.
@@ -292,11 +292,11 @@ func (d *v1OpenaiInterpreter) extractSystemPrompt() string {
 - Append those messages to thoughts instead of tasks.
 
 ## Critical Rules for Idempotency
-You will receive "Current Messages" (new context) and "Current Tasks" (database state).
+You will receive "Recent Messages" (new context) and "Current Tasks" (database state).
 Your job is to reconcile them.
 
 **STEP 1: Analyze Input**
-For every potential task in "Current Messages", check if it effectively exists in "Current Tasks".
+For every potential task in "Recent Messages", check if it effectively exists in "Current Tasks".
 
 **STEP 2: Fuzzy Matching**
 - Ignore prefixes like "Task A:", "1.", "Step 1:".
@@ -315,8 +315,7 @@ For every potential task in "Current Messages", check if it effectively exists i
 ## Input Format
 - Input will be markdown-formatted text, with the following sections:
   - ## Current Tasks: existing tasks, their orders, descriptions, and statuses
-  - ## Previous Messages: the history of user/agent messages helps provide context. [no message id, maybe truncated]
-  - ## Current Messages: the most recent messages that you need to analyze [with message ids]
+  - ## Recent Messages: the most recent messages that you need to analyze [with message ids]
   - ## Files: any files attached by the user/agent during the session
 - Message with ID format: <message id=N> ... </message>, inside the tag is the message content, the id field indicates the message id.
 
@@ -325,7 +324,7 @@ You must "think" before acting. Your response must include a thought process exp
 `
 }
 
-func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWindow int, skills []v1.Skill) string {
+func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, files []v1.File, skills []v1.Skill) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Skills (Knowledge Base):\n")
@@ -337,44 +336,28 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWin
 		}
 	}
 
-	var previousMsgs []v1.Message
-	var currentMsgs []v1.Message
-
-	currentIndexStart := 0
-
-	if len(history) > 0 {
-		if messageWindow < 1 {
-			messageWindow = 10
-		}
-
-		splitIndex := max(len(history)-messageWindow, 0)
-
-		previousMsgs = history[:splitIndex]
-		currentMsgs = history[splitIndex:]
-		currentIndexStart = splitIndex
-	}
-
-	sb.WriteString("\n## Previous Messages:\n")
-	if len(previousMsgs) == 0 {
-		sb.WriteString("(No history)\n")
+	sb.WriteString("\n## Recent Messages:\n")
+	if len(history) == 0 {
+		sb.WriteString("(No messages)\n")
 	} else {
-		for _, msg := range previousMsgs {
+		for i, msg := range history {
 			var lines []string
 			for _, p := range msg.Parts {
 				lines = append(lines, d.packMessageLine(msg.Role, p))
 			}
-			sb.WriteString(strings.Join(lines, "\n") + "\n")
+			sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", i, strings.Join(lines, "\n")))
 		}
 	}
 
-	sb.WriteString("\n## Current Messages:\n")
-	for i, msg := range currentMsgs {
-		var lines []string
-		for _, p := range msg.Parts {
-			lines = append(lines, d.packMessageLine(msg.Role, p))
+	sb.WriteString("\n## Files:\n")
+	if len(files) == 0 {
+		sb.WriteString("(No files)\n")
+	} else {
+		for _, f := range files {
+			if f.Asset != nil {
+				sb.WriteString(fmt.Sprintf("- %s (ID: %s) [Size: %d bytes]\n", f.Path, f.Id, f.Asset.SizeBytes))
+			}
 		}
-		actualIndex := currentIndexStart + i
-		sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", actualIndex, strings.Join(lines, "\n")))
 	}
 
 	sb.WriteString("\nAnalyze and determine actions.\n")
@@ -382,7 +365,7 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, messageWin
 	return sb.String()
 }
 
-func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, messageWindow int, files []v1.File, tasks []v1.Task) string {
+func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1.File, tasks []v1.Task) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Tasks:\n")
@@ -401,44 +384,17 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, messageWin
 		}
 	}
 
-	var previousMsgs []v1.Message
-	var currentMsgs []v1.Message
-
-	currentIndexStart := 0
-
-	if len(history) > 0 {
-		if messageWindow < 1 {
-			messageWindow = 10
-		}
-
-		splitIndex := max(len(history)-messageWindow, 0)
-
-		previousMsgs = history[:splitIndex]
-		currentMsgs = history[splitIndex:]
-		currentIndexStart = splitIndex
-	}
-
-	sb.WriteString("\n## Previous Messages:\n")
-	if len(previousMsgs) == 0 {
-		sb.WriteString("(No history)\n")
+	sb.WriteString("\n## Recent Messages:\n")
+	if len(history) == 0 {
+		sb.WriteString("(No messages)\n")
 	} else {
-		for _, msg := range previousMsgs {
+		for i, msg := range history {
 			var lines []string
 			for _, p := range msg.Parts {
 				lines = append(lines, d.packMessageLine(msg.Role, p))
 			}
-			sb.WriteString(strings.Join(lines, "\n") + "\n")
+			sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", i, strings.Join(lines, "\n")))
 		}
-	}
-
-	sb.WriteString("\n## Current Messages:\n")
-	for i, msg := range currentMsgs {
-		var lines []string
-		for _, p := range msg.Parts {
-			lines = append(lines, d.packMessageLine(msg.Role, p))
-		}
-		actualIndex := currentIndexStart + i
-		sb.WriteString(fmt.Sprintf("<message id=%d>\n%s\n</message>\n", actualIndex, strings.Join(lines, "\n")))
 	}
 
 	sb.WriteString("\n## Files:\n")

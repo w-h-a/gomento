@@ -13,6 +13,7 @@ type v1MockInterpreter struct {
 	distillRsp     []interpreter.SkillAction
 	extractRsp     []interpreter.TaskAction
 	distillHistory []v1.Message
+	distillFiles   []v1.File
 	distillSkills  []v1.Skill
 	extractHistory []v1.Message
 	extractFiles   []v1.File
@@ -20,9 +21,10 @@ type v1MockInterpreter struct {
 	mtx            sync.RWMutex
 }
 
-func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, messageWindow int, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
+func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, files []v1.File, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	d.mtx.Lock()
 	d.distillHistory = history
+	d.distillFiles = files
 	d.distillSkills = currentSkills
 	d.mtx.Unlock()
 
@@ -33,7 +35,7 @@ func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, m
 	return []interpreter.SkillAction{{Type: interpreter.SkillActionFinish}}, nil
 }
 
-func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, messageWindow int, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	d.mtx.Lock()
 	d.extractHistory = history
 	d.extractFiles = files
@@ -83,6 +85,7 @@ func NewV1Interpreter(opts ...interpreter.Option) *v1MockInterpreter {
 	d := &v1MockInterpreter{
 		options:        options,
 		distillHistory: []v1.Message{},
+		distillFiles:   []v1.File{},
 		distillSkills:  []v1.Skill{},
 		extractHistory: []v1.Message{},
 		extractFiles:   []v1.File{},

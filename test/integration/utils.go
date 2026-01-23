@@ -99,7 +99,7 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 
 	spaceSvc := v1space.NewV1Service(p, e)
 	sessSvc := v1session.NewV1Service(p, d, f, e, "session")
-	fileSvc := v1file.NewV1Service(p, d, f, e, "file")
+	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
 
 	go func() {
@@ -180,7 +180,7 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 
 	spaceSvc := v1space.NewV1Service(p, e)
 	sessSvc := v1session.NewV1Service(p, d, f, e, "session")
-	fileSvc := v1file.NewV1Service(p, d, f, e, "file")
+	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
 
 	go func() {
