@@ -60,55 +60,10 @@ func (a *V1Agent) Chat(ctx context.Context, chat *v1chat.Chat) (string, []string
 
 	span.SetAttributes(attribute.String("session_id", chat.SessionId.String()))
 
-	if err := a.saveUserMessage(ctx, chat); err != nil {
+	if err := a.saveMessage(ctx, chat, "user"); err != nil {
 		span.RecordError(err)
 		return "", nil, fmt.Errorf("failed to save user message to memory: %w", err)
 	}
-
-	return a.takeTurns(ctx, chat)
-}
-
-func (a *V1Agent) saveUserMessage(ctx context.Context, chat *v1chat.Chat) error {
-	ctx, span := a.tracer.Start(ctx, "agent.saveUserMessage")
-	defer span.End()
-
-	parts := []map[string]string{
-		{
-			"type": "text",
-			"text": chat.Text,
-		},
-	}
-
-	filesArg := map[string]any{}
-
-	for fname, content := range chat.Files {
-		parts = append(parts, map[string]string{
-			"type":       "file",
-			"file_field": fname,
-		})
-		filesArg[fname] = content
-	}
-
-	args := map[string]any{
-		"session_id": chat.SessionId.String(),
-		"role":       "user",
-		"parts":      parts,
-		"files":      filesArg,
-	}
-
-	if _, err := a.toolProvider.Call(ctx, "add_message", args); err != nil {
-		span.RecordError(err)
-		return err
-	}
-
-	return nil
-}
-
-func (a *V1Agent) takeTurns(ctx context.Context, chat *v1chat.Chat) (string, []string, error) {
-	ctx, span := a.tracer.Start(ctx, "agent.takeTurns")
-	defer span.End()
-
-	span.SetAttributes(attribute.String("session_id", chat.SessionId.String()))
 
 	availableTools, err := a.toolProvider.List(ctx)
 	if err != nil {
@@ -214,6 +169,14 @@ func (a *V1Agent) takeTurns(ctx context.Context, chat *v1chat.Chat) (string, []s
 
 		// If no tool calls, bail early
 		if len(choice.ToolCalls) == 0 {
+			assistantResponse := &v1chat.Chat{
+				SessionId: chat.SessionId,
+				Text:      result.String(),
+			}
+			if err := a.saveMessage(ctx, assistantResponse, "assistant"); err != nil {
+				span.RecordError(err)
+				return result.String(), toolCallsLog, fmt.Errorf("failed to save assistant message to memory: %w", err)
+			}
 			span.AddEvent("finishing_turns")
 			return result.String(), toolCallsLog, nil
 		}
@@ -268,6 +231,42 @@ func (a *V1Agent) takeTurns(ctx context.Context, chat *v1chat.Chat) (string, []s
 	span.AddEvent("max_turns_exceeded")
 
 	return "Error: max turns exceeded", toolCallsLog, nil
+}
+
+func (a *V1Agent) saveMessage(ctx context.Context, chat *v1chat.Chat, role string) error {
+	ctx, span := a.tracer.Start(ctx, "agent.saveMessage")
+	defer span.End()
+
+	parts := []map[string]string{
+		{
+			"type": "text",
+			"text": chat.Text,
+		},
+	}
+
+	filesArg := map[string]any{}
+
+	for fname, content := range chat.Files {
+		parts = append(parts, map[string]string{
+			"type":       "file",
+			"file_field": fname,
+		})
+		filesArg[fname] = content
+	}
+
+	args := map[string]any{
+		"session_id": chat.SessionId.String(),
+		"role":       role,
+		"parts":      parts,
+		"files":      filesArg,
+	}
+
+	if _, err := a.toolProvider.Call(ctx, "add_message", args); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return nil
 }
 
 func New(model llms.Model, toolProvider toolprovider.V1ToolProvider, instructions string) *V1Agent {
