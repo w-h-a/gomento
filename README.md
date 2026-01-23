@@ -41,26 +41,28 @@ graph TD
     end
 
     %% Flow 1: Storing Context
-    Agent -- "1. Push Chat Logs, Files, and Assets" --> API
-    API -- "2. Upload Assets" --> MinIO
-    API -- "3. Save Messages, Files, and Asset Metadata" --> Postgres
+    Agent -- "1. Push Chat Logs and Files" --> API
+    API -- "2. Save Messages and File Metadata" --> Postgres
+    API -- "3. Upload Assets" --> MinIO
+    API -- "4. Embed Messages/Files Job" --> Worker
     
     %% Flow 2: Interpretation
-    Agent -- "4. Extract/Distill" --> API
-    API -- "5. Produce Job" --> Worker
-    Worker -- "6. Trigger Interpretation" --> LLM
-    Worker -- "7. Save Tasks/Skills" --> Postgres
+    Agent -- "5. Extract/Distill" --> API
+    API -- "6. Extract/Distill Job" --> Worker
+    Worker -- "7. Trigger Interpretation" --> LLM
+    Worker -- "8. Save Tasks/Skills" --> Postgres
 
     %% Flow 3: Retrieval (Within a Session)
-    Agent -- "8. Get Tasks & Messages Within Session" --> API
-    API -- "9. Fetch Session History" --> Postgres
-    API -- "10. Download/Presign URLs" --> MinIO
-    API -- "11. Return Session History" --> Agent
+    Agent -- "9. Get Tasks & Messages Within Session" --> API
+    API -- "10. Fetch Session History" --> Postgres
+    API -- "11. Download/Presign URLs" --> MinIO
+    API -- "12. Return Session History" --> Agent
 
     %% Flow 4: Retrieval (Across Sessions)
-    Agent -- "12. Get Skills & Messages Across Sessions" --> API
-    API -- "13. Vector Search" --> Postgres
-    API -- "14. Return Relevant Skills/Messages" --> Agent
+    Agent -- "13. Get Skills & Messages Across Sessions" --> API
+    API -- "14. Vector Search" --> Postgres
+    API -- "15. Download/Presign URLs" --> MinIO
+    API -- "16. Return Relevant Skills/Messages" --> Agent
 ```
 
 ### ER Diagram
