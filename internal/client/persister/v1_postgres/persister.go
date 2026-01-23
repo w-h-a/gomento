@@ -862,6 +862,52 @@ func (p *v1PGPersister) UpdateFileEmbedding(ctx context.Context, id uuid.UUID, v
 	return err
 }
 
+func (p *v1PGPersister) SearchFiles(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.File, error) {
+	options := persister.NewSearchOptions(opts...)
+
+	query := `
+        SELECT 
+            f.id, f.space_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+            a.id, a.container, a.path, a.mime, a.size_bytes
+        FROM files f
+        JOIN assets a ON f.asset_id = a.id
+        WHERE (f.space_id = $1 OR f.space_id IS NULL)
+        ORDER BY f.embedding <=> $2
+        LIMIT $3
+    `
+	rows, err := p.conn.QueryContext(ctx, query, spaceId, pgvector.NewVector(vec), options.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []v1.File
+	for rows.Next() {
+		var f v1.File
+		f.Asset = &v1.Asset{}
+		var sId uuid.NullUUID
+
+		if err := rows.Scan(
+			&f.Id, &sId, &f.AssetId, &f.Path, &f.Filename, &f.Meta, &f.CreatedAt, &f.UpdatedAt,
+			&f.Asset.Id, &f.Asset.Container, &f.Asset.Path, &f.Asset.MIME, &f.Asset.SizeBytes,
+		); err != nil {
+			return nil, err
+		}
+
+		if sId.Valid {
+			f.SpaceId = &sId.UUID
+		}
+
+		files = append(files, f)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return files, nil
+}
+
 func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	if len(ids) == 0 {
 		return map[uuid.UUID]*v1.Asset{}, nil

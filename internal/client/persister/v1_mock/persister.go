@@ -563,6 +563,30 @@ func (p *v1MockPersister) UpdateFileEmbedding(ctx context.Context, id uuid.UUID,
 	return nil
 }
 
+func (p *v1MockPersister) SearchFiles(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.File, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	options := persister.NewSearchOptions(opts...)
+
+	var results []v1.File
+	for _, f := range p.files {
+		if (f.SpaceId != nil && *f.SpaceId == spaceId) || f.SpaceId == nil {
+			results = append(results, *f)
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Id.String() < results[j].Id.String()
+	})
+
+	if options.Limit > 0 && len(results) > options.Limit {
+		results = results[:options.Limit]
+	}
+
+	return results, nil
+}
+
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
