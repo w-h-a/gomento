@@ -11,7 +11,6 @@ import (
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
-	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -29,7 +28,6 @@ type V1Service struct {
 	persister  persister.V1Persister
 	dispatcher dispatcher.V1Dispatcher
 	filer      filer.V1Filer
-	embedder   embedder.Embedder
 	tracer     trace.Tracer
 	qname      string
 }
@@ -74,7 +72,7 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 
 	span.SetAttributes(attribute.String("file.id", file.Id.String()))
 
-	if err := s.dispatchJob(ctx, file.Id, file.SpaceId); err != nil {
+	if err := s.dispatchJob(ctx, file.Id); err != nil {
 		span.RecordError(err)
 		return nil, err
 	}
@@ -82,13 +80,12 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 	return file, nil
 }
 
-func (s *V1Service) dispatchJob(ctx context.Context, fileId uuid.UUID, spaceId *uuid.UUID) error {
+func (s *V1Service) dispatchJob(ctx context.Context, fileId uuid.UUID) error {
 	ctx, span := s.tracer.Start(ctx, "file.dispatchJob")
 	defer span.End()
 
 	payload := v1.IngestFileJobPayload{
-		FileId:  fileId,
-		SpaceId: spaceId,
+		FileId: fileId,
 	}
 
 	data, err := json.Marshal(payload)
@@ -109,10 +106,6 @@ func (s *V1Service) dispatchJob(ctx context.Context, fileId uuid.UUID, spaceId *
 		attribute.String("job.id", job.Id.String()),
 		attribute.String("job.type", v1.JobTypeIngestFile),
 	)
-
-	if spaceId != nil {
-		span.SetAttributes(attribute.String("space.id", spaceId.String()))
-	}
 
 	if err := s.persister.CreateJob(ctx, job); err != nil {
 		span.RecordError(err)
@@ -295,7 +288,6 @@ func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
 	f filer.V1Filer,
-	e embedder.Embedder,
 	qname string,
 ) *V1Service {
 	s := service.New()
@@ -304,7 +296,6 @@ func NewV1Service(
 		persister:  p,
 		dispatcher: d,
 		filer:      f,
-		embedder:   e,
 		tracer:     otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_file"),
 		qname:      qname,
 	}

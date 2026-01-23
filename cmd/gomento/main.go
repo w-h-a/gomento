@@ -201,8 +201,6 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 			cli.FilerContainer,
 			cli.FilerUser,
 			cli.FilerPassword,
-			cli.OpenAIAPIKey,
-			cli.EmbedderModel,
 			cli.FileQName,
 		)
 		if err != nil {

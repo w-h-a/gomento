@@ -50,7 +50,14 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	sessionId := uuid.New()
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
 
-	// 3. Create Job
+	// 3. Add a message so extraction runs
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Analyze this"}},
+	}, nil)
+
+	// 4. Create Job
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
@@ -65,7 +72,6 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert
-	// Verify the interpreter received the global file
 	seenFiles := i.ExtractFiles()
 	assert.Len(t, seenFiles, 1)
 	assert.Equal(t, fileId, seenFiles[0].Id)
@@ -104,7 +110,14 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 		SpaceId: &spaceId,
 	})
 
-	// 3. Create Job
+	// 3. Add a message
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Help me"}},
+	}, nil)
+
+	// 4. Create Job
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
@@ -152,6 +165,10 @@ func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
 	ctx := context.Background()
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
+
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "do work"}},
+	}, nil)
 
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
@@ -206,6 +223,10 @@ func TestProcessJob_Distill_DistillsSkillsOnly(t *testing.T) {
 	ctx := context.Background()
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "learn this"}},
+	}, nil)
 
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
@@ -313,15 +334,19 @@ func TestProcessJob_Distill_UpdatesExistingSkill(t *testing.T) {
 	skillId := uuid.New()
 	ctx := context.Background()
 
-	// Add existing skill
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
 	existingSkill := &v1.Skill{
 		Id:      skillId,
 		SpaceId: spaceId,
 		Trigger: "old trigger",
 		SOP:     "old sop",
 	}
-	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
 	_ = p.SaveSkill(ctx, existingSkill)
+
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "update skill"}},
+	}, nil)
 
 	newTrigger := "updated trigger"
 	i := v1mockinterpreter.NewV1Interpreter(
@@ -390,7 +415,12 @@ func TestProcessJob_Distill_IncludesSkillContext(t *testing.T) {
 	}
 	_ = p.SaveSkill(ctx, existingSkill)
 
-	// 3. Create Job
+	// 3. Add Message
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "check logs"}},
+	}, nil)
+
+	// 4. Create Job
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
@@ -437,6 +467,10 @@ func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 	sessionId := uuid.New()
 
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "trigger error"}},
+	}, nil)
 
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
@@ -570,7 +604,7 @@ func TestProcessJob_ProcessingOrder(t *testing.T) {
 
 	// Assert: Verify the interpreter received messages in the correct chronological order
 	history := i.DistillHistory()
-	require.Len(t, history, 2)
+	assert.Len(t, history, 2)
 	assert.Equal(t, "First Message", history[0].Parts[0].Text)
 	assert.Equal(t, "Second Message", history[1].Parts[0].Text)
 }

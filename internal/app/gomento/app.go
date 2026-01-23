@@ -294,8 +294,6 @@ func InitV1FileService(
 	filerContainer string,
 	filerUser string,
 	filerPassword string,
-	openAIAPIKey string,
-	embedderModel string,
 	qName string,
 ) (*v1fileservice.V1Service, error) {
 	p, err := InitV1Persister(ctx, persisterLocation)
@@ -316,20 +314,10 @@ func InitV1FileService(
 		return nil, err
 	}
 
-	e, err := InitEmbedder(
-		ctx,
-		openAIAPIKey,
-		embedderModel,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	filerService := v1fileservice.NewV1Service(
 		p,
 		disp,
 		f,
-		e,
 		qName,
 	)
 

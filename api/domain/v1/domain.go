@@ -33,8 +33,7 @@ type SessionJobPayload struct {
 }
 
 type IngestFileJobPayload struct {
-	FileId  uuid.UUID  `json:"file_id"`
-	SpaceId *uuid.UUID `json:"space_id,omitempty"`
+	FileId uuid.UUID `json:"file_id"`
 }
 
 type Space struct {

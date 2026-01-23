@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
@@ -102,7 +103,7 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 			span.RecordError(err)
 			return fmt.Errorf("invalid job payload: %w", err)
 		}
-		if err := s.ingestFile(ctx, payload.FileId, payload.SpaceId); err != nil {
+		if err := s.ingestFile(ctx, payload.FileId); err != nil {
 			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 			span.RecordError(err)
 			return err
@@ -128,27 +129,58 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 		return service.ErrSessionNotFound
 	}
 
-	var files []v1.File
+	finalWindow := messageWindow
+	if finalWindow < 1 {
+		finalWindow = 20
+	}
 
-	globalFiles, err := s.persister.ListFiles(ctx, nil)
+	recentMsgs, err := s.persister.ListMessages(
+		ctx,
+		sessionId,
+		persister.WithSort(persister.SortOrderDesc),
+		persister.WithLimit(finalWindow),
+	)
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
-	files = append(files, globalFiles...)
 
-	if sess.SpaceId != nil {
-		spaceFiles, err := s.persister.ListFiles(ctx, sess.SpaceId)
-		if err != nil {
-			span.RecordError(err)
-			return err
-		}
-		files = append(files, spaceFiles...)
+	msgs := make([]v1.Message, len(recentMsgs))
+	for i, msg := range recentMsgs {
+		msgs[len(recentMsgs)-1-i] = msg
 	}
 
-	finalWindow := messageWindow
-	if finalWindow < 1 {
-		finalWindow = 10
+	var contextQuery string
+	for _, msg := range msgs {
+		contextQuery += msg.Role + ": " + s.getMessageContent(msg) + "\n"
+	}
+
+	if len(contextQuery) == 0 {
+		slog.InfoContext(ctx, "session has no context, skipping extraction", "session_id", sessionId)
+		span.AddEvent("extraction_skipped")
+		return nil
+	}
+
+	queryVec, err := s.embedder.Embed(ctx, contextQuery)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	searchSpaceId := uuid.Nil
+	if sess.SpaceId != nil {
+		searchSpaceId = *sess.SpaceId
+	}
+
+	files, err := s.persister.SearchFiles(
+		ctx,
+		searchSpaceId,
+		queryVec,
+		persister.SearchWithLimit(5),
+	)
+	if err != nil {
+		span.RecordError(err)
+		return err
 	}
 
 	maxIterations := 3
@@ -158,23 +190,13 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 			attribute.Int("iteration", i+1),
 		))
 
-		msgs, err := s.persister.ListMessages(
-			ctx,
-			sessionId,
-			persister.WithSort(persister.SortOrderAsc),
-		)
-		if err != nil {
-			span.RecordError(err)
-			return err
-		}
-
 		tasks, err := s.persister.FetchCurrentTasks(ctx, sessionId, nil)
 		if err != nil {
 			span.RecordError(err)
 			return err
 		}
 
-		actions, err := s.interpreter.Extract(ctx, msgs, finalWindow, files, tasks)
+		actions, err := s.interpreter.Extract(ctx, msgs, files, tasks)
 		if err != nil {
 			span.RecordError(err)
 			return err
@@ -362,19 +384,53 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 
 	if sess.SpaceId == nil {
 		slog.InfoContext(ctx, "session has no space, skipping distillation", "session_id", sessionId)
-		span.AddEvent("distill_skipped")
+		span.AddEvent("distillation_skipped")
 		return nil
 	}
 
 	finalWindow := messageWindow
 	if finalWindow < 1 {
-		finalWindow = 10
+		finalWindow = 100
 	}
 
-	msgs, err := s.persister.ListMessages(
+	recentMsgs, err := s.persister.ListMessages(
 		ctx,
 		sessionId,
-		persister.WithSort(persister.SortOrderAsc),
+		persister.WithSort(persister.SortOrderDesc),
+		persister.WithLimit(finalWindow),
+	)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	msgs := make([]v1.Message, len(recentMsgs))
+	for i, msg := range recentMsgs {
+		msgs[len(recentMsgs)-1-i] = msg
+	}
+
+	var contextQuery string
+	for _, msg := range msgs {
+		contextQuery += msg.Role + ": " + s.getMessageContent(msg) + "\n"
+	}
+
+	if len(contextQuery) == 0 {
+		slog.InfoContext(ctx, "session has no context, skipping distillation", "session_id", sessionId)
+		span.AddEvent("distillation_skipped")
+		return nil
+	}
+
+	queryVec, err := s.embedder.Embed(ctx, contextQuery)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	files, err := s.persister.SearchFiles(
+		ctx,
+		*sess.SpaceId,
+		queryVec,
+		persister.SearchWithLimit(5),
 	)
 	if err != nil {
 		span.RecordError(err)
@@ -387,7 +443,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 
-	actions, err := s.interpreter.Distill(ctx, msgs, finalWindow, skills)
+	actions, err := s.interpreter.Distill(ctx, msgs, files, skills)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -483,7 +539,7 @@ func (s *V1Service) executeSkillAction(ctx context.Context, sess *v1.Session, ac
 	}
 }
 
-func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID, spaceId *uuid.UUID) error {
+func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 	ctx, span := s.tracer.Start(ctx, "worker.ingestFile")
 	defer span.End()
 
@@ -526,6 +582,16 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID, spaceId *u
 	}
 
 	return s.persister.UpdateFileEmbedding(ctx, file.Id, vec)
+}
+
+func (s *V1Service) getMessageContent(m v1.Message) string {
+	var sb strings.Builder
+	for _, p := range m.Parts {
+		if len(p.Text) > 0 {
+			sb.WriteString(p.Text)
+		}
+	}
+	return sb.String()
 }
 
 func NewV1Service(
