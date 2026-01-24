@@ -119,6 +119,8 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 	vecNorth[0] = 1.0
 	vecSouth := make([]float32, 1536)
 	vecSouth[0] = -1.0
+	vecEast := make([]float32, 1536)
+	vecEast[0] = 0.5
 
 	// Inject Skill v
 	_, err = db.Exec(`
@@ -132,6 +134,20 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 		INSERT INTO messages (id, session_id, role, parts, embedding, created_at)
 		VALUES ($1, $2, 'user', '[{"type":"text","text":"Go South"}]', $3, NOW())
 	`, uuid.New(), sessId, pgvector.NewVector(vecSouth))
+	require.NoError(t, err)
+
+	// Inject Asset & File
+	assetId := uuid.New()
+	_, err = db.Exec(`
+		INSERT INTO assets (id, container, path, etag, sha256, mime, size_bytes, created_at)
+		VALUES ($1, 'test-bucket', 'docs/east.txt', 'etag', 'sha', 'text/plain', 100, NOW())
+	`, assetId)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO files (id, space_id, asset_id, path, filename, embedding, created_at, updated_at)
+		VALUES ($1, $2, $3, 'docs/east.txt', 'east.txt', $4, NOW(), NOW())
+	`, uuid.New(), spaceId, assetId, pgvector.NewVector(vecEast))
 	require.NoError(t, err)
 
 	// Search Skills
@@ -175,4 +191,26 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 	var msgResults []v1.Message
 	json.Unmarshal([]byte(textContent.Text), &msgResults)
 	assert.GreaterOrEqual(t, len(msgResults), 1)
+
+	// Search Files
+	resFile, err := client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "search_files",
+			Arguments: map[string]any{
+				"space_id": spaceId,
+				"query":    "East",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, resFile.IsError)
+	require.NotEmpty(t, resFile.Content)
+
+	textContent, ok = resFile.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	var fileResults []v1.File
+	json.Unmarshal([]byte(textContent.Text), &fileResults)
+	assert.GreaterOrEqual(t, len(fileResults), 1)
+	assert.Equal(t, "east.txt", fileResults[0].Filename)
 }

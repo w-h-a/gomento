@@ -125,6 +125,31 @@ func (s *V1Service) SearchMessages(ctx context.Context, spaceId uuid.UUID, query
 	return messages, nil
 }
 
+func (s *V1Service) SearchFiles(ctx context.Context, spaceId uuid.UUID, query string) ([]v1.File, error) {
+	ctx, span := s.tracer.Start(ctx, "space.SearchFiles")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("space.id", spaceId.String()),
+		attribute.String("search.query", query),
+	)
+
+	vec, err := s.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	files, err := s.persister.SearchFiles(ctx, spaceId, vec, persister.SearchWithLimit(10))
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+
+	span.SetAttributes(attribute.Int("result.count", len(files)))
+
+	return files, nil
+}
+
 func NewV1Service(
 	p persister.V1Persister,
 	e embedder.Embedder,

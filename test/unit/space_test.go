@@ -118,3 +118,37 @@ func TestSearchMessages_OrchestratesVectorSearch(t *testing.T) {
 	assert.Equal(t, msg.Id, results[0].Id)
 	assert.Equal(t, "find me", e.Input())
 }
+
+func TestSearchFiles_OrchestratesVectorSearch(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
+	ctx := context.Background()
+
+	spaceId := uuid.New()
+
+	// Setup: Create a file in the space
+	fileId := uuid.New()
+	err := p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		SpaceId:  &spaceId,
+		Filename: "logs.txt",
+		Path:     "var/logs",
+	}, &v1.Asset{Id: uuid.New()})
+	require.NoError(t, err)
+
+	// Act
+	results, err := s.SearchFiles(ctx, spaceId, "error logs")
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, results, 1)
+	assert.Equal(t, fileId, results[0].Id)
+	assert.Equal(t, "error logs", e.Input())
+}
