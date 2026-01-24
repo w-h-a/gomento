@@ -573,8 +573,8 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 	query := `WITH last_message AS (
 		SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at DESC LIMIT 1
 	)
-	INSERT INTO messages (id, session_id, parent_id, role, parts, embedding)
-	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4, $5)
+	INSERT INTO messages (id, session_id, parent_id, role, parts)
+	VALUES ($2, $1, (SELECT id FROM last_message), $3, $4)
 	RETURNING parent_id, created_at;`
 
 	if err := tx.QueryRowContext(
@@ -584,7 +584,6 @@ func (p *v1PGPersister) CreateMessageWithAssets(ctx context.Context, msg *v1.Mes
 		msg.Id,
 		msg.Role,
 		partsJson,
-		pgvector.NewVector(msg.Embedding),
 	).Scan(&msg.ParentId, &msg.CreatedAt); err != nil {
 		return err
 	}
@@ -660,6 +659,39 @@ func (p *v1PGPersister) ListMessages(ctx context.Context, sessionId uuid.UUID, o
 	}
 
 	return msgs, nil
+}
+
+func (p *v1PGPersister) GetMessage(ctx context.Context, id uuid.UUID) (*v1.Message, error) {
+	query := `
+        SELECT id, session_id, role, parts, created_at
+        FROM messages
+        WHERE id = $1
+    `
+
+	var msg v1.Message
+	var partsBytes []byte
+
+	err := p.conn.QueryRowContext(ctx, query, id).Scan(
+		&msg.Id, &msg.SessionId, &msg.Role, &partsBytes, &msg.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if err := json.Unmarshal(partsBytes, &msg.Parts); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal message parts: %w", err)
+	}
+
+	return &msg, nil
+}
+
+func (p *v1PGPersister) UpdateMessageEmbedding(ctx context.Context, id uuid.UUID, vec []float32) error {
+	query := `UPDATE messages SET embedding = $1 WHERE id = $2`
+	_, err := p.conn.ExecContext(ctx, query, pgvector.NewVector(vec), id)
+	return err
 }
 
 func (p *v1PGPersister) SearchMessages(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.Message, error) {

@@ -446,6 +446,27 @@ func (p *v1MockPersister) ListMessages(ctx context.Context, sessionId uuid.UUID,
 	return sessionMsgs, nil
 }
 
+func (p *v1MockPersister) GetMessage(ctx context.Context, id uuid.UUID) (*v1.Message, error) {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	if m, ok := p.messages[id]; ok {
+		cpy := *m
+		return &cpy, nil
+	}
+
+	return nil, nil
+}
+
+func (p *v1MockPersister) UpdateMessageEmbedding(ctx context.Context, id uuid.UUID, vector []float32) error {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if existing, ok := p.messages[id]; ok {
+		existing.Embedding = vector
+	}
+	return nil
+}
+
 func (p *v1MockPersister) SearchMessages(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.Message, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()

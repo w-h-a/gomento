@@ -12,6 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 )
 
@@ -246,6 +247,109 @@ func TestAPI_Mcp_Session_Flow(t *testing.T) {
 	err = db.QueryRow("SELECT count(*) FROM skills WHERE space_id = $1", spaceId).Scan(&skillCount)
 	assert.NoError(t, err)
 	assert.Greater(t, skillCount, 0, "Skill should be saved to the Space")
+
+	// ==========================================
+	// Scenario 6: Verify Chat Attachment becomes Searchable File
+	// ==========================================
+	t.Log("Step 6: Verifying Chat Attachment Unification via MCP")
+
+	// 1. Send Message with Attachment
+	_, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "add_message",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+				"role":       "user",
+				"content":    "Here is the log file",
+				"parts": []map[string]any{
+					{"type": "text", "text": "Here is the log file"},
+					{"type": "file", "file_field": "mcp_app.log"},
+				},
+				"files": map[string]any{
+					"mcp_app.log": "MCP_FATAL_ERROR_UNIQUE_ID",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// 2. Verify File Searchability
+	require.Eventually(t, func() bool {
+		res, err := client.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: "search_files",
+				Arguments: map[string]any{
+					"space_id": spaceId,
+					"query":    "MCP_FATAL_ERROR",
+				},
+			},
+		})
+		if err != nil || res.IsError {
+			return false
+		}
+
+		var files []v1.File
+		if err := json.Unmarshal([]byte(res.Content[0].(mcp.TextContent).Text), &files); err != nil {
+			return false
+		}
+
+		for _, f := range files {
+			if f.Filename == "mcp_app.log" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should eventually appear in search_files tool results")
+
+	// ==========================================
+	// Scenario 7: Verify Message Text becomes Searchable
+	// ==========================================
+	t.Log("Step 7: Verifying Chat Message Searchability via MCP")
+
+	// 1. Send Message
+	_, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "add_message",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+				"role":       "user",
+				"parts": []map[string]any{
+					{"type": "text", "text": "The secret project is GREEN_LANTERN"},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// 2. Verify Message Searchability
+	require.Eventually(t, func() bool {
+		res, err := client.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: "search_messages",
+				Arguments: map[string]any{
+					"space_id": spaceId,
+					"query":    "GREEN_LANTERN",
+				},
+			},
+		})
+		if err != nil || res.IsError {
+			return false
+		}
+
+		var msgs []v1.Message
+		if err := json.Unmarshal([]byte(res.Content[0].(mcp.TextContent).Text), &msgs); err != nil {
+			return false
+		}
+
+		for _, m := range msgs {
+			for _, p := range m.Parts {
+				if p.Text == "The secret project is GREEN_LANTERN" {
+					return true
+				}
+			}
+		}
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat message should eventually appear in search_messages tool results")
 }
 
 func sendMessagesViaMcp(
