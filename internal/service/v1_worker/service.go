@@ -64,13 +64,6 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 		return fmt.Errorf("failed to acquire job lock: %w", err)
 	}
 
-	if job.Type != v1.JobTypeDistill && job.Type != v1.JobTypeExtract && job.Type != v1.JobTypeIngestFile {
-		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-		err := fmt.Errorf("unknown job type: %s", job.Type)
-		span.RecordError(err)
-		return err
-	}
-
 	switch job.Type {
 	case v1.JobTypeExtract:
 		var payload v1.SessionJobPayload
@@ -108,6 +101,23 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 			span.RecordError(err)
 			return err
 		}
+	case v1.JobTypeEmbedMessage:
+		var payload v1.EmbedMessageJobPayload
+		if err := json.Unmarshal(job.Payload, &payload); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return fmt.Errorf("invalid job payload: %w", err)
+		}
+		if err := s.embedMessage(ctx, payload.MessageId); err != nil {
+			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+			span.RecordError(err)
+			return err
+		}
+	default:
+		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
+		err := fmt.Errorf("unknown job type: %s", job.Type)
+		span.RecordError(err)
+		return err
 	}
 
 	slog.InfoContext(ctx, "job success", "job_id", job.Id)
@@ -569,7 +579,7 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 	}
 
 	text := string(content)
-	if len(text) == 0 {
+	if len(strings.TrimSpace(text)) == 0 {
 		return nil
 	}
 
@@ -582,6 +592,40 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 	}
 
 	return s.persister.UpdateFileEmbedding(ctx, file.Id, vec)
+}
+
+func (s *V1Service) embedMessage(ctx context.Context, messageId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "worker.embedMessage")
+	defer span.End()
+
+	msg, err := s.persister.GetMessage(ctx, messageId)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+	if msg == nil {
+		return service.ErrMessageNotFound
+	}
+
+	var sb strings.Builder
+	for _, p := range msg.Parts {
+		if len(p.Text) > 0 {
+			sb.WriteString(p.Text + "\n")
+		}
+	}
+
+	text := sb.String()
+	if len(strings.TrimSpace(text)) == 0 {
+		return nil
+	}
+
+	vec, err := s.embedder.Embed(ctx, text)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return s.persister.UpdateMessageEmbedding(ctx, messageId, vec)
 }
 
 func (s *V1Service) getMessageContent(m v1.Message) string {

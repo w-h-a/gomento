@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
-	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
 	"github.com/w-h-a/gomento/internal/service"
@@ -28,12 +26,13 @@ const (
 
 type V1Service struct {
 	*service.Service
-	persister  persister.V1Persister
-	dispatcher dispatcher.V1Dispatcher
-	filer      filer.V1Filer
-	embedder   embedder.Embedder
-	tracer     trace.Tracer
-	qname      string
+	persister    persister.V1Persister
+	dispatcher   dispatcher.V1Dispatcher
+	filer        filer.V1Filer
+	tracer       trace.Tracer
+	sessionQName string
+	fileQName    string
+	messageQName string
 }
 
 func (s *V1Service) Create(ctx context.Context, spaceId *uuid.UUID) (*v1.Session, error) {
@@ -143,6 +142,15 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		attribute.Int("message.files_count", len(in.Files)),
 	)
 
+	sess, err := s.persister.GetSession(ctx, in.SessionId)
+	if err != nil {
+		span.RecordError(err)
+		return nil, err
+	}
+	if sess == nil {
+		return nil, service.ErrSessionNotFound
+	}
+
 	assets := map[int]*v1.Asset{}
 	finalParts := []v1.Part{}
 
@@ -189,7 +197,30 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 
 		asset.Id = uuid.New()
 
+		file := &v1.File{
+			Id:       uuid.New(),
+			SpaceId:  sess.SpaceId,
+			Path:     asset.Path,
+			Filename: inputFile.Filename,
+			Meta:     json.RawMessage(fmt.Sprintf(`{"source": "message_attachment", "session_id": "%s"}`, sess.Id)),
+		}
+
+		if err := s.persister.UpsertFileWithAsset(ctx, file, asset); err != nil {
+			span.RecordError(err)
+			return nil, fmt.Errorf("failed to upsert file: %w", err)
+		}
+
+		file.Asset = asset
+
+		span.SetAttributes(attribute.String("file.id", file.Id.String()))
+
+		if err := s.dispatchFileJob(ctx, file.Id); err != nil {
+			span.RecordError(err)
+			return nil, err
+		}
+
 		domainPart.Meta["filename"] = inputFile.Filename
+		domainPart.Meta["file_id"] = file.Id.String()
 
 		currentPartIdx := len(finalParts)
 		assets[currentPartIdx] = asset
@@ -197,28 +228,19 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		finalParts = append(finalParts, domainPart)
 	}
 
-	var fullText strings.Builder
-	for _, part := range finalParts {
-		if part.Type == "text" {
-			fullText.WriteString(part.Text + "\n")
-		}
-	}
-
-	vec, err := s.embedder.Embed(ctx, fullText.String())
-	if err != nil {
-		span.RecordError(err)
-		return nil, err
-	}
-
 	msg := &v1.Message{
 		Id:        uuid.New(),
 		SessionId: in.SessionId,
 		Role:      in.Role,
 		Parts:     finalParts,
-		Embedding: vec,
 	}
 
 	if err := s.persister.CreateMessageWithAssets(ctx, msg, assets); err != nil {
+		span.RecordError(err)
+		return nil, fmt.Errorf("failed to persist message: %w", err)
+	}
+
+	if err := s.dispatchMessageJob(ctx, msg.Id); err != nil {
 		span.RecordError(err)
 		return nil, err
 	}
@@ -354,15 +376,15 @@ func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTask
 }
 
 func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
-	return s.dispatchJob(ctx, sessionId, messageWindow, v1.JobTypeExtract)
+	return s.dispatchSessionJob(ctx, sessionId, messageWindow, v1.JobTypeExtract)
 }
 
 func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
-	return s.dispatchJob(ctx, sessionId, messageWindow, v1.JobTypeDistill)
+	return s.dispatchSessionJob(ctx, sessionId, messageWindow, v1.JobTypeDistill)
 }
 
-func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, messageWindow int, scope string) error {
-	ctx, span := s.tracer.Start(ctx, "session.dispatchJob")
+func (s *V1Service) dispatchSessionJob(ctx context.Context, sessionId uuid.UUID, messageWindow int, scope string) error {
+	ctx, span := s.tracer.Start(ctx, "session.dispatchSessionJob")
 	defer span.End()
 
 	payload := v1.SessionJobPayload{
@@ -395,7 +417,87 @@ func (s *V1Service) dispatchJob(ctx context.Context, sessionId uuid.UUID, messag
 		return fmt.Errorf("failed to persist job: %w", err)
 	}
 
-	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.qname)); err != nil {
+	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.sessionQName)); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to publish job: %w", err)
+	}
+
+	return nil
+}
+
+func (s *V1Service) dispatchFileJob(ctx context.Context, fileId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "session.dispatchFileJob")
+	defer span.End()
+
+	payload := v1.IngestFileJobPayload{
+		FileId: fileId,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeIngestFile,
+		Payload: data,
+		Status:  v1.JobStatusPending,
+	}
+
+	span.SetAttributes(
+		attribute.String("file.id", fileId.String()),
+		attribute.String("job.id", job.Id.String()),
+		attribute.String("job.type", v1.JobTypeIngestFile),
+	)
+
+	if err := s.persister.CreateJob(ctx, job); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to persist job: %w", err)
+	}
+
+	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.fileQName)); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to publish job: %w", err)
+	}
+
+	return nil
+}
+
+func (s *V1Service) dispatchMessageJob(ctx context.Context, messageId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "session.dispatchMessageJob")
+	defer span.End()
+
+	payload := v1.EmbedMessageJobPayload{
+		MessageId: messageId,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeEmbedMessage,
+		Payload: data,
+		Status:  v1.JobStatusPending,
+	}
+
+	span.SetAttributes(
+		attribute.String("message.id", messageId.String()),
+		attribute.String("job.id", job.Id.String()),
+		attribute.String("job.type", v1.JobTypeEmbedMessage),
+	)
+
+	if err := s.persister.CreateJob(ctx, job); err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("failed to persist job: %w", err)
+	}
+
+	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.messageQName)); err != nil {
 		span.RecordError(err)
 		return fmt.Errorf("failed to publish job: %w", err)
 	}
@@ -407,17 +509,19 @@ func NewV1Service(
 	p persister.V1Persister,
 	d dispatcher.V1Dispatcher,
 	f filer.V1Filer,
-	e embedder.Embedder,
-	qname string,
+	sessionQName string,
+	fileQName string,
+	messageQName string,
 ) *V1Service {
 	s := service.New()
 	return &V1Service{
-		Service:    s,
-		persister:  p,
-		dispatcher: d,
-		filer:      f,
-		embedder:   e,
-		tracer:     otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_session"),
-		qname:      qname,
+		Service:      s,
+		persister:    p,
+		dispatcher:   d,
+		filer:        f,
+		tracer:       otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_session"),
+		sessionQName: sessionQName,
+		fileQName:    fileQName,
+		messageQName: messageQName,
 	}
 }

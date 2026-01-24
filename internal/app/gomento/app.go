@@ -242,9 +242,9 @@ func InitV1SessionService(
 	filerContainer string,
 	filerUser string,
 	filerPassword string,
-	openAIAPIKey string,
-	embedderModel string,
-	qName string,
+	sessionQName string,
+	fileQName string,
+	messageQName string,
 ) (*v1sessionservice.V1Service, error) {
 	p, err := InitV1Persister(ctx, persisterLocation)
 	if err != nil {
@@ -264,21 +264,13 @@ func InitV1SessionService(
 		return nil, err
 	}
 
-	e, err := InitEmbedder(
-		ctx,
-		openAIAPIKey,
-		embedderModel,
-	)
-	if err != nil {
-		return nil, err
-	}
-
 	sessionService := v1sessionservice.NewV1Service(
 		p,
 		disp,
 		f,
-		e,
-		qName,
+		sessionQName,
+		fileQName,
+		messageQName,
 	)
 
 	return sessionService, nil

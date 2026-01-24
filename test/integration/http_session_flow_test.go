@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
 )
 
@@ -193,6 +194,108 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	err = db.QueryRow("SELECT count(*) FROM skills WHERE space_id = $1", spaceId.String()).Scan(&skillCount)
 	assert.NoError(t, err)
 	assert.Greater(t, skillCount, 0, "Skill should be saved to the Space")
+
+	// ==========================================
+	// Scenario 6: Verify Chat Attachment becomes Searchable File
+	// ==========================================
+	t.Log("Step 6: Verifying Chat Attachment Unification via HTTP")
+
+	// 1. Send Message with Attachment
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("role", "user")
+
+	textAndFileParts := []map[string]string{
+		{"type": "text", "text": "Here is the error log"},
+		{"type": "file", "file_field": "critical_log"},
+	}
+	partsBytes, _ := json.Marshal(textAndFileParts)
+	_ = writer.WriteField("parts", string(partsBytes))
+
+	part, _ := writer.CreateFormFile("critical_log", "critical.log")
+	uniqueContent := fmt.Sprintf("FATAL_CRASH_%d", time.Now().UnixNano())
+	part.Write([]byte(uniqueContent))
+	_ = writer.Close()
+
+	uploadUrl := fmt.Sprintf("%s/api/v1/sessions/%s/messages", baseURL, sessionId)
+	req, _ = http.NewRequest("POST", uploadUrl, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	uploadRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer uploadRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, uploadRsp.StatusCode)
+
+	// 2. Verify File Searchability
+	fileSearchUrl := fmt.Sprintf("%s/api/v1/spaces/%s/files?q=FATAL_CRASH", baseURL, spaceId)
+
+	require.Eventually(t, func() bool {
+		req, _ := http.NewRequest("GET", fileSearchUrl, nil)
+		rsp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer rsp.Body.Close()
+
+		var files []v1.File
+		if err := json.NewDecoder(rsp.Body).Decode(&files); err != nil {
+			return false
+		}
+		for _, f := range files {
+			if f.Filename == "critical.log" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should eventually appear in file search results")
+
+	// ==========================================
+	// Scenario 7: Verify Message Text becomes Searchable
+	// ==========================================
+	t.Log("Step 7: Verifying Chat Message Searchability via HTTP")
+
+	// 1. Send Message
+	msgBody := &bytes.Buffer{}
+	msgWriter := multipart.NewWriter(msgBody)
+	_ = msgWriter.WriteField("role", "user")
+
+	textParts := []map[string]string{
+		{"type": "text", "text": "The secret code is BLUE_ORION"},
+	}
+	partsBytes, _ = json.Marshal(textParts)
+	_ = msgWriter.WriteField("parts", string(partsBytes))
+	_ = msgWriter.Close()
+
+	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/messages", baseURL, sessionId), msgBody)
+	req.Header.Set("Content-Type", msgWriter.FormDataContentType())
+
+	msgRsp, err := client.Do(req)
+	require.NoError(t, err)
+	defer msgRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, msgRsp.StatusCode)
+
+	// 2. Verify Message Searchability
+	msgSearchUrl := fmt.Sprintf("%s/api/v1/spaces/%s/messages?q=BLUE_ORION", baseURL, spaceId)
+
+	require.Eventually(t, func() bool {
+		req, _ := http.NewRequest("GET", msgSearchUrl, nil)
+		rsp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer rsp.Body.Close()
+
+		var msgs []v1.Message
+		if err := json.NewDecoder(rsp.Body).Decode(&msgs); err != nil {
+			return false
+		}
+		for _, m := range msgs {
+			if len(m.Parts) > 0 && m.Parts[0].Text == "The secret code is BLUE_ORION" {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat message should eventually appear in message search results")
 }
 
 func sendMessagesViaHttp(

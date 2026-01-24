@@ -40,6 +40,8 @@ type V1Persister interface {
 
 	CreateMessageWithAssets(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error
 	ListMessages(ctx context.Context, sessionId uuid.UUID, opts ...ListMessagesOption) ([]v1.Message, error)
+	GetMessage(ctx context.Context, id uuid.UUID) (*v1.Message, error)
+	UpdateMessageEmbedding(ctx context.Context, id uuid.UUID, vector []float32) error
 	SearchMessages(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.Message, error)
 
 	UpsertFileWithAsset(ctx context.Context, file *v1.File, asset *v1.Asset) error

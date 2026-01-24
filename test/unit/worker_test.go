@@ -517,7 +517,9 @@ func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
 	}, asset)
 	require.NoError(t, err)
 
-	payload, _ := json.Marshal(v1.IngestFileJobPayload{FileId: fileId})
+	payload, _ := json.Marshal(v1.IngestFileJobPayload{
+		FileId: fileId,
+	})
 	job := &v1.Job{
 		Id:      uuid.New(),
 		Type:    v1.JobTypeIngestFile,
@@ -539,6 +541,59 @@ func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, updatedFile)
 	assert.Equal(t, float32(0.01), updatedFile.Embedding[0])
+
+	assert.Contains(t, e.Input(), content)
+}
+
+func TestProcessJob_EmbedMessage_CalculatesAndPersistsEmbedding(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, f, v1mockinterpreter.NewV1Interpreter(), e)
+
+	ctx := context.Background()
+
+	msgId := uuid.New()
+
+	err := p.CreateMessageWithAssets(ctx, &v1.Message{
+		Id:    msgId,
+		Role:  "user",
+		Parts: []v1.Part{{Type: "text", Text: "Embed me please"}},
+	}, nil)
+	require.NoError(t, err)
+
+	payload, _ := json.Marshal(v1.EmbedMessageJobPayload{
+		MessageId: msgId,
+	})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeEmbedMessage,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	p.CreateJob(ctx, job)
+
+	// Act
+	err = s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updatedJob := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updatedJob.Status)
+
+	updatedMsg, err := p.GetMessage(ctx, msgId)
+	require.NoError(t, err)
+	assert.NotNil(t, updatedMsg)
+	assert.Equal(t, float32(0.01), updatedMsg.Embedding[0])
+
+	assert.Contains(t, e.Input(), "Embed me please")
 }
 
 func TestProcessJob_ProcessingOrder(t *testing.T) {

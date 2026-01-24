@@ -60,7 +60,7 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 		SpaceId:  in.SpaceId,
 		Path:     in.Path,
 		Filename: in.Filename,
-		Meta:     []byte("{}"),
+		Meta:     json.RawMessage(`{"source": "file_upload"}`),
 	}
 
 	if err := s.persister.UpsertFileWithAsset(ctx, file, asset); err != nil {
@@ -72,7 +72,7 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 
 	span.SetAttributes(attribute.String("file.id", file.Id.String()))
 
-	if err := s.dispatchJob(ctx, file.Id); err != nil {
+	if err := s.dispatchFileJob(ctx, file.Id); err != nil {
 		span.RecordError(err)
 		return nil, err
 	}
@@ -80,8 +80,8 @@ func (s *V1Service) Upload(ctx context.Context, in CreateFileInput) (*v1.File, e
 	return file, nil
 }
 
-func (s *V1Service) dispatchJob(ctx context.Context, fileId uuid.UUID) error {
-	ctx, span := s.tracer.Start(ctx, "file.dispatchJob")
+func (s *V1Service) dispatchFileJob(ctx context.Context, fileId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "file.dispatchFileJob")
 	defer span.End()
 
 	payload := v1.IngestFileJobPayload{

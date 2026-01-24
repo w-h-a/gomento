@@ -98,13 +98,14 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, d, f, e, "session")
+	sessSvc := v1session.NewV1Service(p, d, f, "session", "file", "message")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "file")
+		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "message")
 	}()
 
 	rawMcpServer := mcpserver.NewMCPServer("test-mcp", "1.0.0")
@@ -179,13 +180,14 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, d, f, e, "session")
+	sessSvc := v1session.NewV1Service(p, d, f, "session", "file", "message")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "file")
+		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "message")
 	}()
 
 	r, _ := gomento.RegisterV1HttpHandlers(
