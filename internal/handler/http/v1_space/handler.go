@@ -77,6 +77,10 @@ func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+	if len(q) == 0 {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Query parameter is required")
+		return
+	}
 
 	skills, err := h.service.SearchSkills(r.Context(), id, q)
 	if err != nil {
@@ -96,6 +100,10 @@ func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := r.URL.Query().Get("q")
+	if len(q) == 0 {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Query parameter is required")
+		return
+	}
 
 	msgs, err := h.service.SearchMessages(r.Context(), id, q)
 	if err != nil {
@@ -104,6 +112,29 @@ func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httphandler.WrtJSON(w, http.StatusOK, msgs)
+}
+
+func (h *v1Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["space_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if len(q) == 0 {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Query parameter is required")
+		return
+	}
+
+	files, err := h.service.SearchFiles(r.Context(), id, q)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, files)
 }
 
 func NewV1Handler(s *v1space.V1Service) *v1Handler {
