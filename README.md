@@ -135,8 +135,18 @@ erDiagram
         TEXT path
         TEXT filename
         JSONB meta
+        VECTOR embedding "pgvector(1536)"
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
+    }
+
+    FILE_CHUNKS {
+        UUID id PK
+        UUID file_id FK
+        INT chunk_index
+        TEXT content
+        VECTOR embedding "pgvector(1536)"
+        TIMESTAMPTZ created_at
     }
     
     SPACES ||--o{ SKILLS : ""
@@ -150,5 +160,6 @@ erDiagram
     MESSAGES ||--o{ MESSAGE_ASSETS : ""
     ASSETS ||--o{ MESSAGE_ASSETS : ""
 
+    FILES ||--o{ FILE_CHUNKS : ""
     ASSETS ||--o{ FILES : ""
 ```
