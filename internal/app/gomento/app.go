@@ -278,8 +278,8 @@ func InitV1SessionService(
 
 func InitV1FileService(
 	ctx context.Context,
-	persisterLocation string,
 	disp dispatcher.V1Dispatcher,
+	persisterLocation string,
 	filerEndpoint string,
 	filerPublicEndpoint string,
 	filerRegion string,
