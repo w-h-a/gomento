@@ -194,8 +194,8 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 
 		fileService, err = gomento.InitV1FileService(
 			ctx,
-			cli.PersisterLocation,
 			disp,
+			cli.PersisterLocation,
 			cli.FilerEndpoint,
 			cli.FilerPublicEndpoint,
 			cli.FilerRegion,
