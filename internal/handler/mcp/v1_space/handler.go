@@ -257,6 +257,53 @@ func (h *v1Handler) searchFiles(ctx context.Context, req mcp.CallToolRequest) (*
 	return mcp.NewToolResultJSON(files)
 }
 
+func (h *v1Handler) SearchChunksTool() server.ServerTool {
+	return server.ServerTool{
+		Tool: mcp.Tool{
+			Name:        "search_chunks",
+			Description: "Semantically search for file chunks within a space (domain of knowledge).",
+			InputSchema: mcp.ToolInputSchema{
+				Type: "object",
+				Properties: map[string]any{
+					"space_id": map[string]string{"type": "string", "description": "The UUID of the space."},
+					"query":    map[string]string{"type": "string", "description": "The natural language search query."},
+				},
+				Required: []string{"space_id", "query"},
+			},
+		},
+		Handler: h.searchChunks,
+	}
+}
+
+func (h *v1Handler) searchChunks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args, ok := req.Params.Arguments.(map[string]any)
+	if !ok {
+		return mcp.NewToolResultError("invalid arguments"), nil
+	}
+
+	spaceId, ok := args["space_id"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing space_id"), nil
+	}
+
+	id, err := uuid.Parse(spaceId)
+	if err != nil {
+		return mcp.NewToolResultError("invalid space_id format"), nil
+	}
+
+	query, ok := args["query"].(string)
+	if !ok {
+		return mcp.NewToolResultError("missing query"), nil
+	}
+
+	chunks, err := h.service.SearchChunks(ctx, id, query)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultJSON(chunks)
+}
+
 func NewV1Handler(s *v1space.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,

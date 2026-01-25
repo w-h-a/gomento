@@ -355,6 +355,7 @@ func RegisterV1McpHandlers(
 		spaceHandler.SearchSkillsTool(),
 		spaceHandler.SearchMessagesTool(),
 		spaceHandler.SearchFilesTool(),
+		spaceHandler.SearchChunksTool(),
 	}
 	for _, t := range spaceTools {
 		if err := registrar.Handle(t); err != nil {
@@ -447,6 +448,7 @@ func RegisterV1HttpHandlers(
 	v1.Methods("GET").Path("/spaces/{space_id}/skills").HandlerFunc(spaceHandler.SearchSkills)
 	v1.Methods("GET").Path("/spaces/{space_id}/messages").HandlerFunc(spaceHandler.SearchMessages)
 	v1.Methods("GET").Path("/spaces/{space_id}/files").HandlerFunc(spaceHandler.SearchFiles)
+	v1.Methods("GET").Path("/spaces/{space_id}/chunks").HandlerFunc(spaceHandler.SearchChunks)
 
 	sessionHandler := v1sessionhttphandler.NewV1Handler(sess)
 	v1.Methods("POST").Path("/sessions").HandlerFunc(sessionHandler.Create)

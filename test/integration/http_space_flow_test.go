@@ -97,6 +97,8 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	vecSouth[0] = -1.0
 	vecEast := make([]float32, 1536)
 	vecEast[0] = 0.5
+	vecWest := make([]float32, 1536)
+	vecWest[0] = -0.5
 
 	// Inject Skill
 	_, err = db.Exec(`
@@ -120,10 +122,18 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	`, assetId)
 	require.NoError(t, err)
 
+	fileId := uuid.New()
+
 	_, err = db.Exec(`
 		INSERT INTO files (id, space_id, asset_id, path, filename, embedding, created_at, updated_at)
 		VALUES ($1, $2, $3, 'docs/east.txt', 'east.txt', $4, NOW(), NOW())
-	`, uuid.New(), spaceId, assetId, pgvector.NewVector(vecEast))
+	`, fileId, spaceId, assetId, pgvector.NewVector(vecEast))
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO file_chunks (id, file_id, chunk_index, content, embedding, created_at)
+		VALUES ($1, $2, 0, 'Go West Life is Peaceful There', $3, NOW())
+	`, uuid.New(), fileId, pgvector.NewVector(vecWest))
 	require.NoError(t, err)
 
 	// Search Skills
@@ -159,4 +169,16 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	json.NewDecoder(rspFile.Body).Decode(&fileResults)
 	assert.GreaterOrEqual(t, len(fileResults), 1)
 	assert.Equal(t, "east.txt", fileResults[0].Filename)
+
+	// Search Chunks
+	reqChunk, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s/chunks?q=West", baseURL, spaceId), nil)
+	rspChunk, err := client.Do(reqChunk)
+	require.NoError(t, err)
+	defer rspChunk.Body.Close()
+	assert.Equal(t, http.StatusOK, rspChunk.StatusCode)
+
+	var chunkResults []v1.MatchingChunk
+	json.NewDecoder(rspChunk.Body).Decode(&chunkResults)
+	assert.GreaterOrEqual(t, len(chunkResults), 1)
+	assert.Contains(t, chunkResults[0].Chunk.Content, "Go West")
 }

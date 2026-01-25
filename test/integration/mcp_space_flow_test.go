@@ -121,6 +121,8 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 	vecSouth[0] = -1.0
 	vecEast := make([]float32, 1536)
 	vecEast[0] = 0.5
+	vecWest := make([]float32, 1536)
+	vecWest[0] = -0.5
 
 	// Inject Skill v
 	_, err = db.Exec(`
@@ -144,10 +146,18 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 	`, assetId)
 	require.NoError(t, err)
 
+	fileId := uuid.New()
+
 	_, err = db.Exec(`
 		INSERT INTO files (id, space_id, asset_id, path, filename, embedding, created_at, updated_at)
 		VALUES ($1, $2, $3, 'docs/east.txt', 'east.txt', $4, NOW(), NOW())
-	`, uuid.New(), spaceId, assetId, pgvector.NewVector(vecEast))
+	`, fileId, spaceId, assetId, pgvector.NewVector(vecEast))
+	require.NoError(t, err)
+
+	_, err = db.Exec(`
+		INSERT INTO file_chunks (id, file_id, chunk_index, content, embedding, created_at)
+		VALUES ($1, $2, 0, 'Go West Life is Peaceful There', $3, NOW())
+	`, uuid.New(), fileId, pgvector.NewVector(vecWest))
 	require.NoError(t, err)
 
 	// Search Skills
@@ -213,4 +223,26 @@ func TestAPI_Mcp_Space_Flow(t *testing.T) {
 	json.Unmarshal([]byte(textContent.Text), &fileResults)
 	assert.GreaterOrEqual(t, len(fileResults), 1)
 	assert.Equal(t, "east.txt", fileResults[0].Filename)
+
+	// Search Chunks
+	resChunk, err := client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "search_chunks",
+			Arguments: map[string]any{
+				"space_id": spaceId,
+				"query":    "West",
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.False(t, resChunk.IsError)
+	require.NotEmpty(t, resChunk.Content)
+
+	textContent, ok = resChunk.Content[0].(mcp.TextContent)
+	require.True(t, ok)
+
+	var chunkResults []v1.MatchingChunk
+	json.Unmarshal([]byte(textContent.Text), &chunkResults)
+	assert.GreaterOrEqual(t, len(chunkResults), 1)
+	assert.Contains(t, chunkResults[0].Chunk.Content, "Go West")
 }
