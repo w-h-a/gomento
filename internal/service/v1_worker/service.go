@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/tmc/langchaingo/textsplitter"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/embedder"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	maxFileBytes = 10 * 1024
+	maxFileBytes = 10 * 1024 * 1024 // 10MB
 )
 
 type V1Service struct {
@@ -182,7 +183,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 		searchSpaceId = *sess.SpaceId
 	}
 
-	files, err := s.persister.SearchFiles(
+	chunks, err := s.persister.SearchMatchingChunks(
 		ctx,
 		searchSpaceId,
 		queryVec,
@@ -206,7 +207,7 @@ func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWin
 			return err
 		}
 
-		actions, err := s.interpreter.Extract(ctx, msgs, files, tasks)
+		actions, err := s.interpreter.Extract(ctx, msgs, chunks, tasks)
 		if err != nil {
 			span.RecordError(err)
 			return err
@@ -436,7 +437,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 
-	files, err := s.persister.SearchFiles(
+	chunks, err := s.persister.SearchMatchingChunks(
 		ctx,
 		*sess.SpaceId,
 		queryVec,
@@ -453,7 +454,7 @@ func (s *V1Service) distill(ctx context.Context, sessionId uuid.UUID, messageWin
 		return err
 	}
 
-	actions, err := s.interpreter.Distill(ctx, msgs, files, skills)
+	actions, err := s.interpreter.Distill(ctx, msgs, chunks, skills)
 	if err != nil {
 		span.RecordError(err)
 		return err
@@ -571,7 +572,6 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 	}
 	defer rc.Close()
 
-	// TODO: use file chunking instead
 	content, err := io.ReadAll(io.LimitReader(rc, maxFileBytes))
 	if err != nil {
 		span.RecordError(err)
@@ -583,15 +583,48 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 		return nil
 	}
 
-	document := fmt.Sprintf("Filename: %s\n\nContent:\n%s", file.Filename, text)
+	splitter := textsplitter.NewRecursiveCharacter()
 
-	vec, err := s.embedder.Embed(ctx, document)
+	splitter.ChunkSize = 1000
+	splitter.ChunkOverlap = 200
+
+	chunks, err := splitter.SplitText(text)
 	if err != nil {
 		span.RecordError(err)
 		return err
 	}
 
-	return s.persister.UpdateFileEmbedding(ctx, file.Id, vec)
+	var fileChunks []v1.FileChunk
+
+	for i, content := range chunks {
+		chunkText := fmt.Sprintf("Filename: %s\nChunk %d:\n%s", file.Filename, i+1, content)
+
+		vec, err := s.embedder.Embed(ctx, chunkText)
+		if err != nil {
+			span.RecordError(err)
+			return err
+		}
+
+		fileChunks = append(fileChunks, v1.FileChunk{
+			Id:         uuid.New(),
+			FileId:     file.Id,
+			ChunkIndex: i,
+			Content:    content,
+			Embedding:  vec,
+		})
+	}
+
+	if err := s.persister.SaveFileChunks(ctx, file.Id, fileChunks); err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	// Legacy
+	if len(fileChunks) > 0 {
+		_ = s.persister.UpdateFileEmbedding(ctx, file.Id, fileChunks[0].Embedding)
+	}
+
+	return nil
 }
 
 func (s *V1Service) embedMessage(ctx context.Context, messageId uuid.UUID) error {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -298,13 +299,82 @@ func TestAPI_Mcp_Session_Flow(t *testing.T) {
 				return true
 			}
 		}
+
 		return false
 	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should eventually appear in search_files tool results")
 
 	// ==========================================
-	// Scenario 7: Verify Message Text becomes Searchable
+	// Scenario 7: Verify Chat Attachment becomes Searchable File
 	// ==========================================
-	t.Log("Step 7: Verifying Chat Message Searchability via MCP")
+	t.Log("Step 7: Verifying Chat Attachment Unification & Chunking via MCP")
+
+	// 1. Send Message with Large Content
+	largeMcpContent := "MCP_START\n" + strings.Repeat("x", 5000) + "\n\nBREAK\n\n" + strings.Repeat("y", 5000) + "\nMCP_END"
+
+	_, err = client.CallTool(ctx, mcp.CallToolRequest{
+		Params: mcp.CallToolParams{
+			Name: "add_message",
+			Arguments: map[string]any{
+				"session_id": sessionId,
+				"role":       "user",
+				"content":    "Here is the log file",
+				"parts": []map[string]any{
+					{"type": "text", "text": "Here is the log file"},
+					{"type": "file", "file_field": "mcp_app_large.log"},
+				},
+				"files": map[string]any{
+					"mcp_app_large.log": largeMcpContent,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// 2. Verify File Search
+	var mcpAttachmentId string
+
+	require.Eventually(t, func() bool {
+		res, err := client.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: "search_files",
+				Arguments: map[string]any{
+					"space_id": spaceId,
+					"query":    "MCP_START",
+				},
+			},
+		})
+		if err != nil || res.IsError {
+			return false
+		}
+
+		var files []v1.File
+		if err := json.Unmarshal([]byte(res.Content[0].(mcp.TextContent).Text), &files); err != nil {
+			return false
+		}
+
+		for _, f := range files {
+			if f.Filename == "mcp_app_large.log" {
+				mcpAttachmentId = f.Id.String()
+				return true
+			}
+		}
+
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should appear in search_files results")
+
+	// 3. Verify Database Chunking
+	require.NotEmpty(t, mcpAttachmentId)
+
+	require.Eventually(t, func() bool {
+		var count int
+		err := db.QueryRow("SELECT count(*) FROM file_chunks WHERE file_id = $1", mcpAttachmentId).Scan(&count)
+		return err == nil && count > 1
+	}, 5*time.Second, 500*time.Millisecond, "MCP Chat attachment should be split into multiple chunks")
+
+	// ==========================================
+	// Scenario 8: Verify Message Text becomes Searchable
+	// ==========================================
+	t.Log("Step 8: Verifying Chat Message Searchability via MCP")
 
 	// 1. Send Message
 	_, err = client.CallTool(ctx, mcp.CallToolRequest{

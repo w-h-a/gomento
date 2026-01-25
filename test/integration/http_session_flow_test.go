@@ -241,18 +241,89 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 		if err := json.NewDecoder(rsp.Body).Decode(&files); err != nil {
 			return false
 		}
+
 		for _, f := range files {
 			if f.Filename == "critical.log" {
 				return true
 			}
 		}
+
 		return false
 	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should eventually appear in file search results")
 
 	// ==========================================
-	// Scenario 7: Verify Message Text becomes Searchable
+	// Scenario 7: Verify Chat Attachment becomes Searchable File
 	// ==========================================
-	t.Log("Step 7: Verifying Chat Message Searchability via HTTP")
+	t.Log("Step 7: Verifying Chat Attachment Unification & Chunking via HTTP")
+
+	// 1. Send Message with Large Content
+	body = &bytes.Buffer{}
+	writer = multipart.NewWriter(body)
+	_ = writer.WriteField("role", "user")
+
+	textAndFileParts = []map[string]string{
+		{"type": "text", "text": "Here is the error log"},
+		{"type": "file", "file_field": "critical_log"},
+	}
+	partsBytes, _ = json.Marshal(textAndFileParts)
+	_ = writer.WriteField("parts", string(partsBytes))
+
+	largeLogContent := "START_LOG\n" + strings.Repeat("l", 5000) + "\n\nBREAK\n\n" + strings.Repeat("o", 5000) + "\nEND_LOG"
+
+	part, _ = writer.CreateFormFile("critical_log", "critical_large.log")
+	part.Write([]byte(largeLogContent))
+	_ = writer.Close()
+
+	uploadUrl = fmt.Sprintf("%s/api/v1/sessions/%s/messages", baseURL, sessionId)
+	req, _ = http.NewRequest("POST", uploadUrl, body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	uploadRsp, err = client.Do(req)
+	require.NoError(t, err)
+	defer uploadRsp.Body.Close()
+	assert.Equal(t, http.StatusOK, uploadRsp.StatusCode)
+
+	// 2. Verify File Search
+	fileSearchUrl = fmt.Sprintf("%s/api/v1/spaces/%s/files?q=START_LOG", baseURL, spaceId)
+
+	var attachmentFileId string
+
+	require.Eventually(t, func() bool {
+		req, _ := http.NewRequest("GET", fileSearchUrl, nil)
+		rsp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer rsp.Body.Close()
+
+		var files []v1.File
+		if err := json.NewDecoder(rsp.Body).Decode(&files); err != nil {
+			return false
+		}
+
+		for _, f := range files {
+			if f.Filename == "critical_large.log" {
+				attachmentFileId = f.Id.String()
+				return true
+			}
+		}
+
+		return false
+	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should appear in file search")
+
+	// 3. Verify Database Chunking
+	require.NotEmpty(t, attachmentFileId)
+
+	require.Eventually(t, func() bool {
+		var count int
+		err := db.QueryRow("SELECT count(*) FROM file_chunks WHERE file_id = $1", attachmentFileId).Scan(&count)
+		return err == nil && count > 1
+	}, 5*time.Second, 500*time.Millisecond, "Chat attachment should be split into multiple chunks in DB")
+
+	// ==========================================
+	// Scenario 8: Verify Message Text becomes Searchable
+	// ==========================================
+	t.Log("Step 8: Verifying Chat Message Searchability via HTTP")
 
 	// 1. Send Message
 	msgBody := &bytes.Buffer{}

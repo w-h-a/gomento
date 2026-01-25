@@ -25,15 +25,15 @@ type v1OpenaiInterpreter struct {
 	tracer  trace.Tracer
 }
 
-func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, files []v1.File, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
+func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Distill")
 	defer span.End()
 
-	slog.InfoContext(ctx, "distilling session", "message_count", len(history), "file_count", len(files), "skill_count", len(currentSkills))
+	slog.InfoContext(ctx, "distilling session", "message_count", len(history), "chunk_count", len(chunks), "skill_count", len(currentSkills))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.distillSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, files, currentSkills)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.distillUserPrompt(history, chunks, currentSkills)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -115,15 +115,15 @@ func (d *v1OpenaiInterpreter) Distill(ctx context.Context, history []v1.Message,
 	return actions, nil
 }
 
-func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1OpenaiInterpreter) Extract(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	ctx, span := d.tracer.Start(ctx, "interpreter.Extract")
 	defer span.End()
 
-	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "file_count", len(files), "current_task_count", len(currentTasks))
+	slog.InfoContext(ctx, "extracting tasks", "msg_count", len(history), "chunk_count", len(chunks), "current_task_count", len(currentTasks))
 
 	content := []llms.MessageContent{
 		llms.TextParts(llms.ChatMessageTypeSystem, d.extractSystemPrompt()),
-		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, files, currentTasks)),
+		llms.TextParts(llms.ChatMessageTypeHuman, d.extractUserPrompt(history, chunks, currentTasks)),
 	}
 
 	rsp, err := d.llm.GenerateContent(
@@ -324,7 +324,7 @@ You must "think" before acting. Your response must include a thought process exp
 `
 }
 
-func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, files []v1.File, skills []v1.Skill) string {
+func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, chunks []v1.MatchingChunk, skills []v1.Skill) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Skills (Knowledge Base):\n")
@@ -349,14 +349,16 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, files []v1
 		}
 	}
 
-	sb.WriteString("\n## Files:\n")
-	if len(files) == 0 {
-		sb.WriteString("(No files)\n")
+	sb.WriteString("\n## Relevant File Chunks:\n")
+	if len(chunks) == 0 {
+		sb.WriteString("(No relevant file chunks)\n")
 	} else {
-		for _, f := range files {
-			if f.Asset != nil {
-				sb.WriteString(fmt.Sprintf("- %s (ID: %s) [Size: %d bytes]\n", f.Path, f.Id, f.Asset.SizeBytes))
-			}
+		for i, match := range chunks {
+			sb.WriteString(fmt.Sprintf("--- Chunk #%d ---\n", i+1))
+			sb.WriteString(fmt.Sprintf("Source: %s (Chunk %d)\n", match.File.Filename, match.Chunk.ChunkIndex))
+			sb.WriteString("Content:\n")
+			sb.WriteString(match.Chunk.Content)
+			sb.WriteString("\n\n")
 		}
 	}
 
@@ -365,7 +367,7 @@ func (d *v1OpenaiInterpreter) distillUserPrompt(history []v1.Message, files []v1
 	return sb.String()
 }
 
-func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1.File, tasks []v1.Task) string {
+func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, chunks []v1.MatchingChunk, tasks []v1.Task) string {
 	var sb strings.Builder
 
 	sb.WriteString("## Current Tasks:\n")
@@ -397,14 +399,16 @@ func (d *v1OpenaiInterpreter) extractUserPrompt(history []v1.Message, files []v1
 		}
 	}
 
-	sb.WriteString("\n## Files:\n")
-	if len(files) == 0 {
-		sb.WriteString("(No files)\n")
+	sb.WriteString("\n## Relevant File Chunks:\n")
+	if len(chunks) == 0 {
+		sb.WriteString("(No relevant file chunks)\n")
 	} else {
-		for _, f := range files {
-			if f.Asset != nil {
-				sb.WriteString(fmt.Sprintf("- %s (ID: %s) [Size: %d bytes]\n", f.Path, f.Id, f.Asset.SizeBytes))
-			}
+		for i, match := range chunks {
+			sb.WriteString(fmt.Sprintf("--- Chunk #%d ---\n", i+1))
+			sb.WriteString(fmt.Sprintf("Source: %s (Chunk %d)\n", match.File.Filename, match.Chunk.ChunkIndex))
+			sb.WriteString("Content:\n")
+			sb.WriteString(match.Chunk.Content)
+			sb.WriteString("\n\n")
 		}
 	}
 

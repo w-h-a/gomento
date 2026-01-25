@@ -58,7 +58,7 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 	db, err := sql.Open("postgres", DB_CONN)
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
-	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, assets, files CASCADE`)
+	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, assets, files, file_chunks CASCADE`)
 	require.NoError(t, err)
 
 	s3Config, _ := config.LoadDefaultConfig(ctx,
@@ -140,7 +140,7 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	db, err := sql.Open("postgres", DB_CONN)
 	require.NoError(t, err)
 	require.NoError(t, db.Ping())
-	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, assets, files CASCADE`)
+	_, err = db.Exec(`TRUNCATE TABLE jobs, skills, message_assets, messages, tasks, sessions, spaces, assets, files, file_chunks CASCADE`)
 	require.NoError(t, err)
 
 	s3Config, _ := config.LoadDefaultConfig(ctx,
