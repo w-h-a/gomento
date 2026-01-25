@@ -152,3 +152,46 @@ func TestSearchFiles_OrchestratesVectorSearch(t *testing.T) {
 	assert.Equal(t, fileId, results[0].Id)
 	assert.Equal(t, "error logs", e.Input())
 }
+
+func TestSearchChunks_OrchestratesVectorSearch(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
+	ctx := context.Background()
+
+	spaceId := uuid.New()
+	fileId := uuid.New()
+
+	// Setup: Create a file and a chunk in the space
+	err := p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		SpaceId:  &spaceId,
+		Filename: "manual.pdf",
+	}, &v1.Asset{Id: uuid.New()})
+	require.NoError(t, err)
+
+	expectedChunk := v1.FileChunk{
+		Id:         uuid.New(),
+		FileId:     fileId,
+		ChunkIndex: 0,
+		Content:    "specific knowledge about deploying",
+	}
+	err = p.SaveFileChunks(ctx, fileId, []v1.FileChunk{expectedChunk})
+	require.NoError(t, err)
+
+	// Act
+	results, err := s.SearchChunks(ctx, spaceId, "deploying help")
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, results, 1)
+	assert.Equal(t, expectedChunk.Id, results[0].Chunk.Id)
+	assert.Equal(t, "specific knowledge about deploying", results[0].Chunk.Content)
+	assert.Equal(t, "deploying help", e.Input())
+}

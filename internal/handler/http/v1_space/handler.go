@@ -137,6 +137,29 @@ func (h *v1Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, files)
 }
 
+func (h *v1Handler) SearchChunks(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := uuid.Parse(vars["space_id"])
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Space ID")
+		return
+	}
+
+	q := r.URL.Query().Get("q")
+	if len(q) == 0 {
+		httphandler.WrtErr(w, http.StatusBadRequest, "Query parameter is required")
+		return
+	}
+
+	chunks, err := h.service.SearchChunks(r.Context(), id, q)
+	if err != nil {
+		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	httphandler.WrtJSON(w, http.StatusOK, chunks)
+}
+
 func NewV1Handler(s *v1space.V1Service) *v1Handler {
 	return &v1Handler{
 		service: s,
