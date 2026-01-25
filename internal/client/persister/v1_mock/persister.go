@@ -608,6 +608,16 @@ func (p *v1MockPersister) SearchFiles(ctx context.Context, spaceId uuid.UUID, ve
 	return results, nil
 }
 
+func (p *v1MockPersister) SaveFileChunks(ctx context.Context, fileId uuid.UUID, chunks []v1.FileChunk) error {
+	// TODO
+	return nil
+}
+
+func (p *v1MockPersister) SearchMatchingChunks(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.MatchingChunk, error) {
+	// TODO
+	return []v1.MatchingChunk{}, nil
+}
+
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()

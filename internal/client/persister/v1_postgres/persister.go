@@ -940,6 +940,90 @@ func (p *v1PGPersister) SearchFiles(ctx context.Context, spaceId uuid.UUID, vec 
 	return files, nil
 }
 
+func (p *v1PGPersister) SaveFileChunks(ctx context.Context, fileId uuid.UUID, chunks []v1.FileChunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+
+	tx, err := p.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, "DELETE FROM file_chunks WHERE file_id = $1", fileId); err != nil {
+		return err
+	}
+
+	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("file_chunks", "file_id", "chunk_index", "content", "embedding"))
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, chunk := range chunks {
+		if _, err := stmt.ExecContext(ctx, fileId, chunk.ChunkIndex, chunk.Content, pgvector.NewVector(chunk.Embedding)); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (p *v1PGPersister) SearchMatchingChunks(ctx context.Context, spaceId uuid.UUID, vec []float32, opts ...persister.SearchOption) ([]v1.MatchingChunk, error) {
+	options := persister.NewSearchOptions(opts...)
+
+	query := `
+		SELECT 
+			f.id, f.space_id, f.asset_id, f.path, f.filename, f.meta, f.created_at, f.updated_at,
+			a.id, a.container, a.path, a.mime, a.size_bytes,
+			fc.chunk_index, fc.content,
+			(fc.embedding <=> $2) as distance
+		FROM file_chunks fc
+		JOIN files f ON fc.file_id = f.id
+		JOIN assets a ON f.asset_id = a.id
+		WHERE (f.space_id = $1 OR f.space_id IS NULL)
+		ORDER BY distance ASC
+		LIMIT $3
+	`
+	rows, err := p.conn.QueryContext(ctx, query, spaceId, pgvector.NewVector(vec), options.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []v1.MatchingChunk
+	for rows.Next() {
+		var m v1.MatchingChunk
+		m.File.Asset = &v1.Asset{}
+		var sId uuid.NullUUID
+		var dist float64
+
+		if err := rows.Scan(
+			&m.File.Id, &sId, &m.File.AssetId, &m.File.Path, &m.File.Filename, &m.File.Meta, &m.File.CreatedAt, &m.File.UpdatedAt,
+			&m.File.Asset.Id, &m.File.Asset.Container, &m.File.Asset.Path, &m.File.Asset.MIME, &m.File.Asset.SizeBytes,
+			&m.Chunk.ChunkIndex, &m.Chunk.Content,
+			&dist,
+		); err != nil {
+			return nil, err
+		}
+
+		if sId.Valid {
+			m.File.SpaceId = &sId.UUID
+		}
+
+		m.Score = float32(1.0 - dist)
+
+		results = append(results, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 func (p *v1PGPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
 	if len(ids) == 0 {
 		return map[uuid.UUID]*v1.Asset{}, nil

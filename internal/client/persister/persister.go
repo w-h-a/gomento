@@ -51,5 +51,8 @@ type V1Persister interface {
 	UpdateFileEmbedding(ctx context.Context, id uuid.UUID, vector []float32) error
 	SearchFiles(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.File, error)
 
+	SaveFileChunks(ctx context.Context, fileId uuid.UUID, chunks []v1.FileChunk) error
+	SearchMatchingChunks(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...SearchOption) ([]v1.MatchingChunk, error)
+
 	GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error)
 }

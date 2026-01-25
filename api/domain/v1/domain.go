@@ -98,6 +98,12 @@ type Part struct {
 	Meta    map[string]any `json:"meta,omitempty"`
 }
 
+type MatchingChunk struct {
+	File  File      `json:"file"`
+	Chunk FileChunk `json:"chunk"`
+	Score float32   `json:"score"`
+}
+
 type File struct {
 	Id        uuid.UUID       `json:"id"`
 	SpaceId   *uuid.UUID      `json:"space_id"`
@@ -109,6 +115,15 @@ type File struct {
 	CreatedAt time.Time       `json:"created_at"`
 	UpdatedAt time.Time       `json:"updated_at"`
 	Asset     *Asset          `json:"asset,omitempty"`
+}
+
+type FileChunk struct {
+	Id         uuid.UUID `json:"id"`
+	FileId     uuid.UUID `json:"file_id"`
+	ChunkIndex int       `json:"chunk_index"`
+	Content    string    `json:"content"`
+	Embedding  []float32 `json:"embedding"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 type Asset struct {
