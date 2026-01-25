@@ -967,6 +967,10 @@ func (p *v1PGPersister) SaveFileChunks(ctx context.Context, fileId uuid.UUID, ch
 		}
 	}
 
+	if _, err := stmt.ExecContext(ctx); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }
 

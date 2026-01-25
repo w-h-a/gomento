@@ -46,18 +46,30 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 		Filename: "main.go",
 	}, &v1.Asset{Id: uuid.New()})
 
-	// 2. Setup Session (No Space needed for global files)
+	// 2. Seed Chunks
+	expectedContent := "package main\nfunc main() {}"
+	_ = p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
+		{
+			Id:         uuid.New(),
+			FileId:     fileId,
+			ChunkIndex: 0,
+			Content:    expectedContent,
+			Embedding:  []float32{0.1, 0.2},
+		},
+	})
+
+	// 3. Setup Session (No Space needed for global files)
 	sessionId := uuid.New()
 	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
 
-	// 3. Add a message so extraction runs
+	// 4. Add a message so extraction runs
 	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
 		SessionId: sessionId,
 		Role:      "user",
 		Parts:     []v1.Part{{Type: "text", Text: "Analyze this"}},
 	}, nil)
 
-	// 4. Create Job
+	// 5. Create Job
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
@@ -72,10 +84,10 @@ func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert
-	seenFiles := i.ExtractFiles()
-	assert.Len(t, seenFiles, 1)
-	assert.Equal(t, fileId, seenFiles[0].Id)
-	assert.Equal(t, "main.go", seenFiles[0].Filename)
+	seenChunks := i.ExtractChunks()
+	require.NotEmpty(t, seenChunks, "Interpreter should have received chunks found by search")
+	assert.Equal(t, fileId, seenChunks[0].File.Id)
+	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
 }
 
 func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
@@ -103,21 +115,33 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 		Filename: "readme.md",
 	}, &v1.Asset{Id: uuid.New()})
 
-	// 2. Setup Session (Connected to Space)
+	// 2. Seed Chunks
+	expectedContent := "# Project Documentation"
+	p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
+		{
+			Id:         uuid.New(),
+			FileId:     fileId,
+			ChunkIndex: 0,
+			Content:    expectedContent,
+			Embedding:  []float32{0.1, 0.1},
+		},
+	})
+
+	// 3. Setup Session (Connected to Space)
 	sessionId := uuid.New()
 	_ = p.CreateSession(ctx, &v1.Session{
 		Id:      sessionId,
 		SpaceId: &spaceId,
 	})
 
-	// 3. Add a message
+	// 4. Add a message
 	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
 		SessionId: sessionId,
 		Role:      "user",
 		Parts:     []v1.Part{{Type: "text", Text: "Help me"}},
 	}, nil)
 
-	// 4. Create Job
+	// 5. Create Job
 	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
 	job := &v1.Job{
 		Id:      uuid.New(),
@@ -132,10 +156,10 @@ func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert
-	seenFiles := i.ExtractFiles()
-	assert.Len(t, seenFiles, 1)
-	assert.Equal(t, fileId, seenFiles[0].Id)
-	assert.Equal(t, "readme.md", seenFiles[0].Filename)
+	seenChunks := i.ExtractChunks()
+	require.NotEmpty(t, seenChunks, "Interpreter should receive space-scoped chunks")
+	assert.Equal(t, fileId, seenChunks[0].File.Id)
+	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
 }
 
 func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
@@ -386,6 +410,72 @@ func TestProcessJob_Distill_UpdatesExistingSkill(t *testing.T) {
 	assert.Equal(t, newTrigger, e.Input())
 }
 
+func TestProcessJob_Distill_IncludesChunkContext(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter()
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, d, v1mockfiler.NewV1Filer(), i, e)
+
+	ctx := context.Background()
+	spaceId := uuid.New()
+	sessionId := uuid.New()
+
+	// 1. Setup Space File & Chunks
+	fileId := uuid.New()
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		SpaceId:  &spaceId,
+		Path:     "info.txt",
+		Filename: "info.txt",
+	}, &v1.Asset{Id: uuid.New()})
+
+	expectedChunkContent := "Important context for skill generation"
+	p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
+		{
+			Id:         uuid.New(),
+			FileId:     fileId,
+			ChunkIndex: 0,
+			Content:    expectedChunkContent,
+			Embedding:  []float32{0.5, 0.5},
+		},
+	})
+
+	// 2. Setup Session
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId})
+
+	// 3. Add Message
+	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
+		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "learn from context"}},
+	}, nil)
+
+	// 4. Create Job
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	_ = p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	chunks := i.DistillChunks()
+	require.Len(t, chunks, 1)
+	assert.Equal(t, expectedChunkContent, chunks[0].Chunk.Content)
+	assert.Equal(t, fileId, chunks[0].File.Id)
+}
+
 func TestProcessJob_Distill_IncludesSkillContext(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -536,6 +626,12 @@ func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
 	// Assert
 	updatedJob := p.Jobs()[job.Id]
 	assert.Equal(t, v1.JobStatusSuccess, updatedJob.Status)
+
+	chunks := p.Chunks()[fileId]
+	require.NoError(t, err)
+	require.Len(t, chunks, 1, "Should have saved 1 chunk for this short content")
+	assert.Equal(t, content, chunks[0].Content)
+	assert.Equal(t, fileId, chunks[0].FileId)
 
 	updatedFile, err := p.GetFile(ctx, fileId)
 	assert.NoError(t, err)

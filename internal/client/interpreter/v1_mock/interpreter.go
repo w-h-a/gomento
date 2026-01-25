@@ -13,18 +13,18 @@ type v1MockInterpreter struct {
 	distillRsp     []interpreter.SkillAction
 	extractRsp     []interpreter.TaskAction
 	distillHistory []v1.Message
-	distillFiles   []v1.File
+	distillChunks  []v1.MatchingChunk
 	distillSkills  []v1.Skill
 	extractHistory []v1.Message
-	extractFiles   []v1.File
+	extractChunks  []v1.MatchingChunk
 	extractTasks   []v1.Task
 	mtx            sync.RWMutex
 }
 
-func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, files []v1.File, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
+func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentSkills []v1.Skill) ([]interpreter.SkillAction, error) {
 	d.mtx.Lock()
 	d.distillHistory = history
-	d.distillFiles = files
+	d.distillChunks = chunks
 	d.distillSkills = currentSkills
 	d.mtx.Unlock()
 
@@ -35,10 +35,10 @@ func (d *v1MockInterpreter) Distill(ctx context.Context, history []v1.Message, f
 	return []interpreter.SkillAction{{Type: interpreter.SkillActionFinish}}, nil
 }
 
-func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
+func (d *v1MockInterpreter) Extract(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentTasks []v1.Task) ([]interpreter.TaskAction, error) {
 	d.mtx.Lock()
 	d.extractHistory = history
-	d.extractFiles = files
+	d.extractChunks = chunks
 	d.extractTasks = currentTasks
 	d.mtx.Unlock()
 
@@ -55,6 +55,12 @@ func (d *v1MockInterpreter) DistillHistory() []v1.Message {
 	return d.distillHistory
 }
 
+func (d *v1MockInterpreter) DistillChunks() []v1.MatchingChunk {
+	d.mtx.RLock()
+	defer d.mtx.RUnlock()
+	return d.distillChunks
+}
+
 func (d *v1MockInterpreter) DistillSkills() []v1.Skill {
 	d.mtx.RLock()
 	defer d.mtx.RUnlock()
@@ -67,10 +73,10 @@ func (d *v1MockInterpreter) ExtractHistory() []v1.Message {
 	return d.extractHistory
 }
 
-func (d *v1MockInterpreter) ExtractFiles() []v1.File {
+func (d *v1MockInterpreter) ExtractChunks() []v1.MatchingChunk {
 	d.mtx.RLock()
 	defer d.mtx.RUnlock()
-	return d.extractFiles
+	return d.extractChunks
 }
 
 func (d *v1MockInterpreter) ExtractTasks() []v1.Task {
@@ -85,10 +91,10 @@ func NewV1Interpreter(opts ...interpreter.Option) *v1MockInterpreter {
 	d := &v1MockInterpreter{
 		options:        options,
 		distillHistory: []v1.Message{},
-		distillFiles:   []v1.File{},
+		distillChunks:  []v1.MatchingChunk{},
 		distillSkills:  []v1.Skill{},
 		extractHistory: []v1.Message{},
-		extractFiles:   []v1.File{},
+		extractChunks:  []v1.MatchingChunk{},
 		extractTasks:   []v1.Task{},
 		mtx:            sync.RWMutex{},
 	}

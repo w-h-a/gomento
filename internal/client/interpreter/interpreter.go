@@ -7,6 +7,6 @@ import (
 )
 
 type V1Interpreter interface {
-	Distill(ctx context.Context, history []v1.Message, files []v1.File, currentSkills []v1.Skill) ([]SkillAction, error)
-	Extract(ctx context.Context, history []v1.Message, files []v1.File, currentTasks []v1.Task) ([]TaskAction, error)
+	Distill(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentSkills []v1.Skill) ([]SkillAction, error)
+	Extract(ctx context.Context, history []v1.Message, chunks []v1.MatchingChunk, currentTasks []v1.Task) ([]TaskAction, error)
 }

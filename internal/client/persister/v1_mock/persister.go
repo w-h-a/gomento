@@ -23,8 +23,9 @@ type v1MockPersister struct {
 	sessions map[uuid.UUID]*v1.Session
 	tasks    map[uuid.UUID]*v1.Task
 	messages map[uuid.UUID]*v1.Message
-	assets   map[uuid.UUID]*v1.Asset
 	files    map[uuid.UUID]*v1.File
+	chunks   map[uuid.UUID][]v1.FileChunk
+	assets   map[uuid.UUID]*v1.Asset
 	mtx      sync.RWMutex
 }
 
@@ -609,13 +610,62 @@ func (p *v1MockPersister) SearchFiles(ctx context.Context, spaceId uuid.UUID, ve
 }
 
 func (p *v1MockPersister) SaveFileChunks(ctx context.Context, fileId uuid.UUID, chunks []v1.FileChunk) error {
-	// TODO
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	var toSave []v1.FileChunk
+	for _, c := range chunks {
+		c.CreatedAt = time.Now()
+		toSave = append(toSave, c)
+	}
+	p.chunks[fileId] = toSave
 	return nil
 }
 
 func (p *v1MockPersister) SearchMatchingChunks(ctx context.Context, spaceId uuid.UUID, vector []float32, opts ...persister.SearchOption) ([]v1.MatchingChunk, error) {
-	// TODO
-	return []v1.MatchingChunk{}, nil
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+
+	options := persister.NewSearchOptions(opts...)
+
+	var results []v1.MatchingChunk
+	for fId, f := range p.files {
+		match := false
+		if (f.SpaceId != nil && *f.SpaceId == spaceId) || f.SpaceId == nil {
+			match = true
+		}
+
+		if match {
+			if chunks, ok := p.chunks[fId]; ok {
+				for _, c := range chunks {
+					cpy := *f
+					mc := v1.MatchingChunk{
+						Chunk: c,
+						File:  cpy,
+						Score: 1.0,
+					}
+					if asset, ok := p.assets[f.AssetId]; ok {
+						cpy := *asset
+						mc.File.Asset = &cpy
+					}
+					results = append(results, mc)
+				}
+			}
+		}
+	}
+
+	if options.Limit > 0 && len(results) > options.Limit {
+		results = results[:options.Limit]
+	}
+
+	return results, nil
+}
+
+func (p *v1MockPersister) Chunks() map[uuid.UUID][]v1.FileChunk {
+	p.mtx.RLock()
+	defer p.mtx.RUnlock()
+	cpy := make(map[uuid.UUID][]v1.FileChunk, len(p.chunks))
+	maps.Copy(cpy, p.chunks)
+	return cpy
 }
 
 func (p *v1MockPersister) GetAssets(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*v1.Asset, error) {
@@ -641,8 +691,9 @@ func NewV1Persister(opts ...persister.Option) *v1MockPersister {
 		sessions: map[uuid.UUID]*v1.Session{},
 		tasks:    map[uuid.UUID]*v1.Task{},
 		messages: map[uuid.UUID]*v1.Message{},
-		assets:   map[uuid.UUID]*v1.Asset{},
 		files:    map[uuid.UUID]*v1.File{},
+		chunks:   map[uuid.UUID][]v1.FileChunk{},
+		assets:   map[uuid.UUID]*v1.Asset{},
 		mtx:      sync.RWMutex{},
 	}
 
