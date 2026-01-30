@@ -218,9 +218,6 @@ A Skill consists of two parts:
 1. Trigger: A concise phrase describing a problem whose resolution is required and described in the SOP.
 2. SOP: A detailed step-by-step resolution of WHAT should happen to solve the problem (Standard Operating Procedure).
 
-Output MUST be a valid JSON object with keys "trigger" and "sop".
-{"trigger": "Description of the situation that necessitates the skill (e.g., Database connection refused)", "sop": "The generalized, step-by-step guide to solving the problem"}
-
 ## Input
 You will receive "Recent Messages" (potential for new knowledge) and "Current Skills" (existing knowledge base).
 
@@ -244,6 +241,7 @@ You will receive "Recent Messages" (potential for new knowledge) and "Current Sk
 
 ## Output Requirement
 You must "think" before acting. Your response must include a thought process explaining your matching decision for each item.
+CRITICAL: You MUST use the provided tools ('insert_skill', 'update_skill', 'finish') to save your results.
 `
 }
 
@@ -321,6 +319,7 @@ For every potential task in "Recent Messages", check if it effectively exists in
 
 ## Output Requirement
 You must "think" before acting. Your response must include a thought process explaining your matching decision for each item.
+CRITICAL: You MUST use the provided tools ('insert_task', 'update_task', 'append_messages_to_task', 'append_messages_to_thought', 'finish') to save your results.
 `
 }
 
