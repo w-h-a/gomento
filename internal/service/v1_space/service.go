@@ -13,6 +13,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const (
+	defaultSearchLimit = 10
+	maxSearchLimit     = 100
+)
+
 type V1Service struct {
 	*service.Service
 	persister persister.V1Persister
@@ -75,14 +80,17 @@ func (s *V1Service) Get(ctx context.Context, id uuid.UUID) (*v1.Space, error) {
 	return space, nil
 }
 
-func (s *V1Service) SearchSkills(ctx context.Context, spaceId uuid.UUID, query string) ([]v1.Skill, error) {
+func (s *V1Service) SearchSkills(ctx context.Context, spaceId uuid.UUID, query string, limit int) ([]v1.Skill, error) {
 	ctx, span := s.tracer.Start(ctx, "space.SearchSkills")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("space.id", spaceId.String()),
 		attribute.String("search.query", query),
+		attribute.Int("search.limit", limit),
 	)
+
+	limit = s.clampLimit(limit)
 
 	vec, err := s.embedder.Embed(ctx, query)
 	if err != nil {
@@ -90,7 +98,7 @@ func (s *V1Service) SearchSkills(ctx context.Context, spaceId uuid.UUID, query s
 		return nil, err
 	}
 
-	skills, err := s.persister.SearchSkills(ctx, spaceId, vec, persister.SearchWithLimit(5))
+	skills, err := s.persister.SearchSkills(ctx, spaceId, vec, persister.SearchWithLimit(limit))
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
@@ -101,14 +109,17 @@ func (s *V1Service) SearchSkills(ctx context.Context, spaceId uuid.UUID, query s
 	return skills, nil
 }
 
-func (s *V1Service) SearchMessages(ctx context.Context, spaceId uuid.UUID, query string) ([]v1.Message, error) {
+func (s *V1Service) SearchMessages(ctx context.Context, spaceId uuid.UUID, query string, limit int) ([]v1.Message, error) {
 	ctx, span := s.tracer.Start(ctx, "space.SearchMessages")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("space.id", spaceId.String()),
 		attribute.String("search.query", query),
+		attribute.Int("search.limit", limit),
 	)
+
+	limit = s.clampLimit(limit)
 
 	vec, err := s.embedder.Embed(ctx, query)
 	if err != nil {
@@ -116,7 +127,7 @@ func (s *V1Service) SearchMessages(ctx context.Context, spaceId uuid.UUID, query
 		return nil, err
 	}
 
-	messages, err := s.persister.SearchMessages(ctx, spaceId, vec, persister.SearchWithLimit(10))
+	messages, err := s.persister.SearchMessages(ctx, spaceId, vec, persister.SearchWithLimit(limit))
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
@@ -127,14 +138,17 @@ func (s *V1Service) SearchMessages(ctx context.Context, spaceId uuid.UUID, query
 	return messages, nil
 }
 
-func (s *V1Service) SearchFiles(ctx context.Context, spaceId uuid.UUID, query string) ([]v1.File, error) {
+func (s *V1Service) SearchFiles(ctx context.Context, spaceId uuid.UUID, query string, limit int) ([]v1.File, error) {
 	ctx, span := s.tracer.Start(ctx, "space.SearchFiles")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("space.id", spaceId.String()),
 		attribute.String("search.query", query),
+		attribute.Int("search.limit", limit),
 	)
+
+	limit = s.clampLimit(limit)
 
 	vec, err := s.embedder.Embed(ctx, query)
 	if err != nil {
@@ -142,7 +156,7 @@ func (s *V1Service) SearchFiles(ctx context.Context, spaceId uuid.UUID, query st
 		return nil, err
 	}
 
-	files, err := s.persister.SearchFiles(ctx, spaceId, vec, persister.SearchWithLimit(10))
+	files, err := s.persister.SearchFiles(ctx, spaceId, vec, persister.SearchWithLimit(limit))
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
@@ -153,14 +167,17 @@ func (s *V1Service) SearchFiles(ctx context.Context, spaceId uuid.UUID, query st
 	return files, nil
 }
 
-func (s *V1Service) SearchChunks(ctx context.Context, spaceId uuid.UUID, query string) ([]v1.MatchingChunk, error) {
+func (s *V1Service) SearchChunks(ctx context.Context, spaceId uuid.UUID, query string, limit int) ([]v1.MatchingChunk, error) {
 	ctx, span := s.tracer.Start(ctx, "space.SearchChunks")
 	defer span.End()
 
 	span.SetAttributes(
 		attribute.String("space.id", spaceId.String()),
 		attribute.String("search.query", query),
+		attribute.Int("search.limit", limit),
 	)
+
+	limit = s.clampLimit(limit)
 
 	vec, err := s.embedder.Embed(ctx, query)
 	if err != nil {
@@ -168,7 +185,7 @@ func (s *V1Service) SearchChunks(ctx context.Context, spaceId uuid.UUID, query s
 		return nil, err
 	}
 
-	chunks, err := s.persister.SearchMatchingChunks(ctx, spaceId, vec, persister.SearchWithLimit(10))
+	chunks, err := s.persister.SearchMatchingChunks(ctx, spaceId, vec, persister.SearchWithLimit(limit))
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
@@ -177,6 +194,16 @@ func (s *V1Service) SearchChunks(ctx context.Context, spaceId uuid.UUID, query s
 	span.SetAttributes(attribute.Int("result.count", len(chunks)))
 
 	return chunks, nil
+}
+
+func (s *V1Service) clampLimit(limit int) int {
+	if limit <= 0 {
+		return defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		return maxSearchLimit
+	}
+	return limit
 }
 
 func NewV1Service(

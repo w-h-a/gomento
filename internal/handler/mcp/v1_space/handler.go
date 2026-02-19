@@ -126,6 +126,7 @@ func (h *v1Handler) SearchSkillsTool() server.ServerTool {
 				Properties: map[string]any{
 					"space_id": map[string]string{"type": "string", "description": "The UUID of the space."},
 					"query":    map[string]string{"type": "string", "description": "The natural language search query."},
+					"limit":    map[string]string{"type": "integer", "description": "The maximum number of results to return (default 10, max 100)."},
 				},
 				Required: []string{"space_id", "query"},
 			},
@@ -155,7 +156,12 @@ func (h *v1Handler) searchSkills(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultError("missing query"), nil
 	}
 
-	skills, err := h.service.SearchSkills(ctx, id, query)
+	var limit int
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+	}
+
+	skills, err := h.service.SearchSkills(ctx, id, query, limit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -173,6 +179,7 @@ func (h *v1Handler) SearchMessagesTool() server.ServerTool {
 				Properties: map[string]any{
 					"space_id": map[string]string{"type": "string", "description": "The UUID of the space."},
 					"query":    map[string]string{"type": "string", "description": "The natural language search query."},
+					"limit":    map[string]string{"type": "integer", "description": "The maximum number of results to return (default 10, max 100)."},
 				},
 				Required: []string{"space_id", "query"},
 			},
@@ -202,7 +209,12 @@ func (h *v1Handler) searchMessages(ctx context.Context, req mcp.CallToolRequest)
 		return mcp.NewToolResultError("missing query"), nil
 	}
 
-	msgs, err := h.service.SearchMessages(ctx, id, query)
+	var limit int
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+	}
+
+	msgs, err := h.service.SearchMessages(ctx, id, query, limit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -220,6 +232,7 @@ func (h *v1Handler) SearchFilesTool() server.ServerTool {
 				Properties: map[string]any{
 					"space_id": map[string]string{"type": "string", "description": "The UUID of the space."},
 					"query":    map[string]string{"type": "string", "description": "The natural language search query."},
+					"limit":    map[string]string{"type": "integer", "description": "The maximum number of results to return (default 10, max 100)."},
 				},
 				Required: []string{"space_id", "query"},
 			},
@@ -249,7 +262,12 @@ func (h *v1Handler) searchFiles(ctx context.Context, req mcp.CallToolRequest) (*
 		return mcp.NewToolResultError("missing query"), nil
 	}
 
-	files, err := h.service.SearchFiles(ctx, id, query)
+	var limit int
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+	}
+
+	files, err := h.service.SearchFiles(ctx, id, query, limit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -267,6 +285,7 @@ func (h *v1Handler) SearchChunksTool() server.ServerTool {
 				Properties: map[string]any{
 					"space_id": map[string]string{"type": "string", "description": "The UUID of the space."},
 					"query":    map[string]string{"type": "string", "description": "The natural language search query."},
+					"limit":    map[string]string{"type": "integer", "description": "The maximum number of results to return (default 10, max 100)."},
 				},
 				Required: []string{"space_id", "query"},
 			},
@@ -296,7 +315,12 @@ func (h *v1Handler) searchChunks(ctx context.Context, req mcp.CallToolRequest) (
 		return mcp.NewToolResultError("missing query"), nil
 	}
 
-	chunks, err := h.service.SearchChunks(ctx, id, query)
+	var limit int
+	if l, ok := args["limit"].(float64); ok && l > 0 {
+		limit = int(l)
+	}
+
+	chunks, err := h.service.SearchChunks(ctx, id, query, limit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

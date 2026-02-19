@@ -74,13 +74,46 @@ func TestSearchSkills_OrchestratesVectorSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	results, err := s.SearchSkills(ctx, spaceId, "nginx help")
+	results, err := s.SearchSkills(ctx, spaceId, "nginx help", 5)
 	require.NoError(t, err)
 
 	// Assert
 	assert.Len(t, results, 1)
 	assert.Equal(t, expectedTrigger, results[0].Trigger)
 	assert.Equal(t, "nginx help", e.Input())
+}
+
+func TestSearchSkills_RespectsLimit(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	e := mockembedder.NewEmbedder()
+	s := v1space.NewV1Service(p, e)
+	ctx := context.Background()
+
+	spaceId := uuid.New()
+
+	// Create 3 skills
+	for i := 0; i < 3; i++ {
+		err := p.SaveSkill(ctx, &v1.Skill{
+			Id:      uuid.New(),
+			SpaceId: spaceId,
+			Trigger: "trigger",
+			SOP:     "sop",
+		})
+		require.NoError(t, err)
+	}
+
+	// Act
+	results, err := s.SearchSkills(ctx, spaceId, "query", 2)
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, results, 2)
 }
 
 func TestSearchMessages_OrchestratesVectorSearch(t *testing.T) {
@@ -110,7 +143,7 @@ func TestSearchMessages_OrchestratesVectorSearch(t *testing.T) {
 	require.NoError(t, p.CreateMessageWithAssets(ctx, msg, nil))
 
 	// Act
-	results, err := s.SearchMessages(ctx, spaceId, "find me")
+	results, err := s.SearchMessages(ctx, spaceId, "find me", 5)
 	require.NoError(t, err)
 
 	// Assert
@@ -144,7 +177,7 @@ func TestSearchFiles_OrchestratesVectorSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	results, err := s.SearchFiles(ctx, spaceId, "error logs")
+	results, err := s.SearchFiles(ctx, spaceId, "error logs", 5)
 	require.NoError(t, err)
 
 	// Assert
@@ -186,7 +219,7 @@ func TestSearchChunks_OrchestratesVectorSearch(t *testing.T) {
 	require.NoError(t, err)
 
 	// Act
-	results, err := s.SearchChunks(ctx, spaceId, "deploying help")
+	results, err := s.SearchChunks(ctx, spaceId, "deploying help", 5)
 	require.NoError(t, err)
 
 	// Assert
