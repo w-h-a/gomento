@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -82,7 +83,14 @@ func (h *v1Handler) SearchSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	skills, err := h.service.SearchSkills(r.Context(), id, q)
+	var limit int
+	if l := r.URL.Query().Get("limit"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	skills, err := h.service.SearchSkills(r.Context(), id, q, limit)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -105,7 +113,14 @@ func (h *v1Handler) SearchMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	msgs, err := h.service.SearchMessages(r.Context(), id, q)
+	var limit int
+	if l := r.URL.Query().Get("limit"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	msgs, err := h.service.SearchMessages(r.Context(), id, q, limit)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -128,7 +143,14 @@ func (h *v1Handler) SearchFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files, err := h.service.SearchFiles(r.Context(), id, q)
+	var limit int
+	if l := r.URL.Query().Get("limit"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	files, err := h.service.SearchFiles(r.Context(), id, q, limit)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -151,7 +173,14 @@ func (h *v1Handler) SearchChunks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	chunks, err := h.service.SearchChunks(r.Context(), id, q)
+	var limit int
+	if l := r.URL.Query().Get("limit"); len(l) > 0 {
+		if val, err := strconv.Atoi(l); err == nil && val > 0 {
+			limit = val
+		}
+	}
+
+	chunks, err := h.service.SearchChunks(r.Context(), id, q, limit)
 	if err != nil {
 		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
 		return

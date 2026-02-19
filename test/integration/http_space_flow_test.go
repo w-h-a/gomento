@@ -181,4 +181,27 @@ func TestAPI_Http_Space_Flow(t *testing.T) {
 	json.NewDecoder(rspChunk.Body).Decode(&chunkResults)
 	assert.GreaterOrEqual(t, len(chunkResults), 1)
 	assert.Contains(t, chunkResults[0].Chunk.Content, "Go West")
+
+	// ==========================================
+	// Scenario 5: Search with Limit
+	// ==========================================
+	t.Log("Step 5: Searching with limit param via HTTP")
+
+	// Inject a second skill
+	_, err = db.Exec(`
+		INSERT INTO skills (id, space_id, trigger, sop, embedding, created_at)
+		VALUES ($1, $2, 'Trigger East', 'SOP Content', $3, NOW())
+	`, uuid.New(), spaceId, pgvector.NewVector(vecEast))
+	require.NoError(t, err)
+
+	// Search Skills with limit=1
+	reqSkillLim, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/spaces/%s/skills?q=trigger&limit=1", baseURL, spaceId), nil)
+	rspSkillLim, err := client.Do(reqSkillLim)
+	require.NoError(t, err)
+	defer rspSkillLim.Body.Close()
+	assert.Equal(t, http.StatusOK, rspSkillLim.StatusCode)
+
+	var skillLimResults []v1.Skill
+	json.NewDecoder(rspSkillLim.Body).Decode(&skillLimResults)
+	assert.Len(t, skillLimResults, 1)
 }
