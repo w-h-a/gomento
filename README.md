@@ -12,7 +12,7 @@ Agents make the same mistakes repeatedly because their successes are buried in r
 
 ## Solution
 
-GoMento is a high-performance, single-binary sidecar for AI memory written in **Go**. It accepts raw chat logs and files, uses a background worker to (a) **extract** a summary of the current session and (b) **distill** the current session into skills that are not session-bound, and makes all this memory easily searchable for your agent.
+GoMento is a high-performance, single-binary sidecar for AI memory written in **Go**. It accepts raw chat logs and files, uses a background worker to automatically **extract** a running summary of each session on ingestion, and lets agents explicitly **distill** sessions into reusable skills that transfer across sessions — all easily searchable.
 
 ### Usage
 
@@ -44,24 +44,24 @@ graph TD
     Agent -- "1. Push Chat Logs and Files" --> API
     API -- "2. Save Messages and File Metadata" --> Postgres
     API -- "3. Upload Assets" --> MinIO
-    API -- "4. Embed Messages/Files Job" --> Worker
+    API -- "4. Dispatch Ingest Jobs" --> Worker
+    Worker -- "5. Embed + Extract" --> LLM
+    Worker -- "6. Save Embeddings + Tasks" --> Postgres
     
-    %% Flow 2: Interpretation
-    Agent -- "5. Extract/Distill" --> API
-    API -- "6. Extract/Distill Job" --> Worker
-    Worker -- "7. Trigger Interpretation" --> LLM
-    Worker -- "8. Save Tasks/Skills" --> Postgres
+    %% Flow 2: Skill Distillation
+    Agent -- "7. Distill Skill" --> API
+    API -- "8. Distill Job" --> Worker
+    Worker -- "9. Trigger Distillation" --> LLM
+    Worker -- "10. Save Skills" --> Postgres
 
     %% Flow 3: Retrieval (Within a Session)
-    Agent -- "9. Get Tasks & Messages Within Session" --> API
-    API -- "10. Fetch Session History" --> Postgres
-    API -- "11. Download/Presign URLs" --> MinIO
-    API -- "12. Return Session History" --> Agent
+    Agent -- "11. Get Tasks & Messages Within Session" --> API
+    API -- "12. Fetch Session History" --> Postgres
+    API -- "13. Return Session History" --> Agent
 
     %% Flow 4: Retrieval (Across Sessions)
-    Agent -- "13. Get Skills & Messages Across Sessions" --> API
-    API -- "14. Vector Search" --> Postgres
-    API -- "15. Download/Presign URLs" --> MinIO
+    Agent -- "14. Get Skills & Messages Across Sessions" --> API
+    API -- "15. Vector Search" --> Postgres
     API -- "16. Return Relevant Skills/Messages" --> Agent
 ```
 
