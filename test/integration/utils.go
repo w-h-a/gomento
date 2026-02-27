@@ -84,6 +84,7 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 	}
 
 	p, _ := gomento.InitV1Persister(ctx, DB_CONN)
+	b, _ := gomento.InitV1Buffer(ctx)
 	d, _ := gomento.InitV1Dispatcher(ctx)
 	i, _ := gomento.InitV1Interpreter(ctx, "", "")
 	e, _ := gomento.InitEmbedder(ctx, "", "")
@@ -98,9 +99,9 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, d, f, "session", "file", "message")
+	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file", "message")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
-	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
+	workerSvc := v1worker.NewV1Service(p, b, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")
@@ -166,6 +167,7 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	}
 
 	p, _ := gomento.InitV1Persister(ctx, DB_CONN)
+	b, _ := gomento.InitV1Buffer(ctx)
 	d, _ := gomento.InitV1Dispatcher(ctx)
 	i, _ := gomento.InitV1Interpreter(ctx, "", "")
 	e, _ := gomento.InitEmbedder(ctx, "", "")
@@ -180,9 +182,9 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, d, f, "session", "file", "message")
+	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file", "message")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
-	workerSvc := v1worker.NewV1Service(p, d, f, i, e)
+	workerSvc := v1worker.NewV1Service(p, b, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")

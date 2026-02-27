@@ -126,6 +126,11 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		return err
 	}
 
+	buf, err := gomento.InitV1Buffer(ctx)
+	if err != nil {
+		return err
+	}
+
 	var workerService *v1workerservice.V1Service
 	if cli.Mode == "" || cli.Mode == "worker" {
 		slog.InfoContext(ctx, "initiating worker")
@@ -135,6 +140,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		workerService, err = gomento.InitV1Worker(
 			ctx,
 			disp,
+			buf,
 			cli.PersisterLocation,
 			cli.FilerEndpoint,
 			cli.FilerPublicEndpoint,
@@ -176,6 +182,7 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 		sessionService, err = gomento.InitV1SessionService(
 			ctx,
 			disp,
+			buf,
 			cli.PersisterLocation,
 			cli.FilerEndpoint,
 			cli.FilerPublicEndpoint,

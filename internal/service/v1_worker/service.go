@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tmc/langchaingo/textsplitter"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	"github.com/w-h-a/gomento/internal/client/buffer"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/filer"
@@ -30,6 +31,7 @@ const (
 type V1Service struct {
 	*service.Service
 	persister   persister.V1Persister
+	buffer      buffer.V1Buffer
 	dispatcher  dispatcher.V1Dispatcher
 	filer       filer.V1Filer
 	interpreter interpreter.V1Interpreter
@@ -673,6 +675,7 @@ func (s *V1Service) getMessageContent(m v1.Message) string {
 
 func NewV1Service(
 	p persister.V1Persister,
+	b buffer.V1Buffer,
 	d dispatcher.V1Dispatcher,
 	f filer.V1Filer,
 	i interpreter.V1Interpreter,
@@ -682,6 +685,7 @@ func NewV1Service(
 	return &V1Service{
 		Service:     s,
 		persister:   p,
+		buffer:      b,
 		dispatcher:  d,
 		filer:       f,
 		interpreter: i,

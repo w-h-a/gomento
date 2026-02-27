@@ -10,14 +10,14 @@ import (
 	"github.com/w-h-a/gomento/internal/client/buffer"
 )
 
-type v1MemBuffer struct {
+type v1MemoryBuffer struct {
 	options buffer.Options
 	recent  map[uuid.UUID][]v1.Message
 	queue   []buffer.BufferedMessage
 	mtx     sync.RWMutex
 }
 
-func (b *v1MemBuffer) Add(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
+func (b *v1MemoryBuffer) Add(ctx context.Context, msg *v1.Message, assets map[int]*v1.Asset) error {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
@@ -39,7 +39,7 @@ func (b *v1MemBuffer) Add(ctx context.Context, msg *v1.Message, assets map[int]*
 	return nil
 }
 
-func (b *v1MemBuffer) GetRecent(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
+func (b *v1MemoryBuffer) GetRecent(ctx context.Context, sessionId uuid.UUID) ([]v1.Message, error) {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
 
@@ -50,7 +50,7 @@ func (b *v1MemBuffer) GetRecent(ctx context.Context, sessionId uuid.UUID) ([]v1.
 	return out, nil
 }
 
-func (b *v1MemBuffer) PopBatch(ctx context.Context, limit int) ([]buffer.BufferedMessage, int, error) {
+func (b *v1MemoryBuffer) PopBatch(ctx context.Context, limit int) ([]buffer.BufferedMessage, int, error) {
 	b.mtx.Lock()
 	defer b.mtx.Unlock()
 
@@ -69,17 +69,17 @@ func (b *v1MemBuffer) PopBatch(ctx context.Context, limit int) ([]buffer.Buffere
 	return batch, len(b.queue), nil
 }
 
-func (b *v1MemBuffer) Count(ctx context.Context) int {
+func (b *v1MemoryBuffer) Count(ctx context.Context) int {
 	b.mtx.RLock()
 	defer b.mtx.RUnlock()
 
 	return len(b.queue)
 }
 
-func NewV1Buffer(opts ...buffer.Option) buffer.V1SessionBuffer {
+func NewV1Buffer(opts ...buffer.Option) buffer.V1Buffer {
 	options := buffer.NewOptions(opts...)
 
-	b := &v1MemBuffer{
+	b := &v1MemoryBuffer{
 		options: options,
 		recent:  make(map[uuid.UUID][]v1.Message),
 		queue:   make([]buffer.BufferedMessage, 0),

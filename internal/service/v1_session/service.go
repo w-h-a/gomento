@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	v1 "github.com/w-h-a/gomento/api/domain/v1"
+	"github.com/w-h-a/gomento/internal/client/buffer"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	"github.com/w-h-a/gomento/internal/client/persister"
@@ -27,6 +28,7 @@ const (
 type V1Service struct {
 	*service.Service
 	persister    persister.V1Persister
+	buffer       buffer.V1Buffer
 	dispatcher   dispatcher.V1Dispatcher
 	filer        filer.V1Filer
 	tracer       trace.Tracer
@@ -507,6 +509,7 @@ func (s *V1Service) dispatchMessageJob(ctx context.Context, messageId uuid.UUID)
 
 func NewV1Service(
 	p persister.V1Persister,
+	b buffer.V1Buffer,
 	d dispatcher.V1Dispatcher,
 	f filer.V1Filer,
 	sessionQName string,
@@ -517,6 +520,7 @@ func NewV1Service(
 	return &V1Service{
 		Service:      s,
 		persister:    p,
+		buffer:       b,
 		dispatcher:   d,
 		filer:        f,
 		tracer:       otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_session"),

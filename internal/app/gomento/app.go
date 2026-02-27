@@ -7,8 +7,10 @@ import (
 
 	"github.com/gorilla/mux"
 	mcp "github.com/mark3labs/mcp-go/server"
+	"github.com/w-h-a/gomento/internal/client/buffer"
+	v1memorybuffer "github.com/w-h-a/gomento/internal/client/buffer/v1_memory"
 	"github.com/w-h-a/gomento/internal/client/dispatcher"
-	v1memory "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
+	v1memorydispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_memory"
 	"github.com/w-h-a/gomento/internal/client/embedder"
 	"github.com/w-h-a/gomento/internal/client/embedder/mock"
 	"github.com/w-h-a/gomento/internal/client/embedder/openai"
@@ -65,7 +67,12 @@ func InitV1Persister(ctx context.Context, loc string) (persister.V1Persister, er
 
 // TODO: accept user configuration
 func InitV1Dispatcher(ctx context.Context) (dispatcher.V1Dispatcher, error) {
-	return v1memory.NewV1Dispatcher(), nil
+	return v1memorydispatcher.NewV1Dispatcher(), nil
+}
+
+// TODO: accept user configuration
+func InitV1Buffer(ctx context.Context) (buffer.V1Buffer, error) {
+	return v1memorybuffer.NewV1Buffer(), nil
 }
 
 // TODO: accept user configuration
@@ -146,6 +153,7 @@ func InitV1Filer(
 func InitV1Worker(
 	ctx context.Context,
 	disp dispatcher.V1Dispatcher,
+	buf buffer.V1Buffer,
 	persisterLocation string,
 	filerEndpoint string,
 	filerPublicEndpoint string,
@@ -195,6 +203,7 @@ func InitV1Worker(
 
 	workerService := v1workerservice.NewV1Service(
 		p,
+		buf,
 		disp,
 		f,
 		i,
@@ -235,6 +244,7 @@ func InitV1SpaceService(
 func InitV1SessionService(
 	ctx context.Context,
 	disp dispatcher.V1Dispatcher,
+	buf buffer.V1Buffer,
 	persisterLocation string,
 	filerEndpoint string,
 	filerPublicEndpoint string,
@@ -266,6 +276,7 @@ func InitV1SessionService(
 
 	sessionService := v1sessionservice.NewV1Service(
 		p,
+		buf,
 		disp,
 		f,
 		sessionQName,
