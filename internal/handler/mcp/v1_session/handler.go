@@ -438,54 +438,6 @@ func (h *v1Handler) listTasks(ctx context.Context, req mcp.CallToolRequest) (*mc
 	return mcp.NewToolResultJSON(out)
 }
 
-func (h *v1Handler) ExtractTasksTool() server.ServerTool {
-	return server.ServerTool{
-		Tool: mcp.Tool{
-			Name:        "extract_tasks",
-			Description: "Trigger a background job to analyze the session history and update the task list (Extract).",
-			InputSchema: mcp.ToolInputSchema{
-				Type: "object",
-				Properties: map[string]any{
-					"session_id":     map[string]string{"type": "string", "description": "The UUID of the session to extract tasks for."},
-					"message_window": map[string]string{"type": "integer", "description": "The number of recent messages to analyze for task extraction for task tracking within this session (default 10)."},
-				},
-				Required: []string{
-					"session_id",
-				},
-			},
-		},
-		Handler: h.extractTasks,
-	}
-}
-
-func (h *v1Handler) extractTasks(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	args, ok := req.Params.Arguments.(map[string]any)
-	if !ok {
-		return mcp.NewToolResultError("invalid args"), nil
-	}
-
-	sessId, ok := args["session_id"].(string)
-	if !ok {
-		return mcp.NewToolResultError("missing session_id"), nil
-	}
-
-	id, err := uuid.Parse(sessId)
-	if err != nil {
-		return mcp.NewToolResultError("invalid session_id"), nil
-	}
-
-	var messageWindow int
-	if w, ok := args["message_window"].(float64); ok {
-		messageWindow = int(w)
-	}
-
-	if err := h.service.ExtractTasks(ctx, id, messageWindow); err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	return mcp.NewToolResultJSON(map[string]string{"status": "extraction_initiated"})
-}
-
 func (h *v1Handler) DistillSkillTool() server.ServerTool {
 	return server.ServerTool{
 		Tool: mcp.Tool{

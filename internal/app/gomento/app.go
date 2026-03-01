@@ -381,7 +381,6 @@ func RegisterV1McpHandlers(
 		sessionHandler.AddMessageTool(),
 		sessionHandler.ListMessagesTool(),
 		sessionHandler.ListTasksTool(),
-		sessionHandler.ExtractTasksTool(),
 		sessionHandler.DistillSkillTool(),
 	}
 	for _, t := range sessTools {
@@ -467,7 +466,6 @@ func RegisterV1HttpHandlers(
 	v1.Methods("POST").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.AddMessage)
 	v1.Methods("GET").Path("/sessions/{session_id}/messages").HandlerFunc(sessionHandler.ListMessages)
 	v1.Methods("GET").Path("/sessions/{session_id}/tasks").HandlerFunc(sessionHandler.ListTasks)
-	v1.Methods("POST").Path("/sessions/{session_id}/extract").HandlerFunc(sessionHandler.ExtractTasks)
 	v1.Methods("POST").Path("/sessions/{session_id}/distill").HandlerFunc(sessionHandler.DistillSkill)
 
 	fileHandler := v1filehttphandler.NewV1Handler(file)

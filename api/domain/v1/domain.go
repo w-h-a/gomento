@@ -9,7 +9,6 @@ import (
 
 const (
 	JobTypeDistill    = "distill_session"
-	JobTypeExtract    = "extract_session"
 	JobTypeIngestFile = "ingest_file"
 
 	JobStatusPending = "pending"

@@ -23,204 +23,6 @@ import (
 	v1worker "github.com/w-h-a/gomento/internal/service/v1_worker"
 )
 
-func TestProcessJob_Extract_IncludesGlobalFileContext(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	b := v1memorybuffer.NewV1Buffer()
-	d := v1mockdispatcher.NewV1Dispatcher()
-	i := v1mockinterpreter.NewV1Interpreter()
-	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
-
-	ctx := context.Background()
-
-	// 1. Setup Global File
-	fileId := uuid.New()
-	_ = p.UpsertFileWithAsset(ctx, &v1.File{
-		Id:       fileId,
-		SpaceId:  nil,
-		Path:     "src",
-		Filename: "main.go",
-	}, &v1.Asset{Id: uuid.New()})
-
-	// 2. Seed Chunks
-	expectedContent := "package main\nfunc main() {}"
-	_ = p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
-		{
-			Id:         uuid.New(),
-			FileId:     fileId,
-			ChunkIndex: 0,
-			Content:    expectedContent,
-			Embedding:  []float32{0.1, 0.2},
-		},
-	})
-
-	// 3. Setup Session (No Space needed for global files)
-	sessionId := uuid.New()
-	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
-
-	// 4. Add a message so extraction runs
-	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
-		SessionId: sessionId,
-		Role:      "user",
-		Parts:     []v1.Part{{Type: "text", Text: "Analyze this"}},
-	}, nil)
-
-	// 5. Create Job
-	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeExtract,
-		Payload: payload,
-		Status:  v1.JobStatusPending,
-	}
-	_ = p.CreateJob(ctx, job)
-
-	// Act
-	err := s.ProcessJob(ctx, job)
-	require.NoError(t, err)
-
-	// Assert
-	seenChunks := i.ExtractChunks()
-	require.NotEmpty(t, seenChunks, "Interpreter should have received chunks found by search")
-	assert.Equal(t, fileId, seenChunks[0].File.Id)
-	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
-}
-
-func TestProcessJob_Extract_IncludesSpaceFileContext(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	b := v1memorybuffer.NewV1Buffer()
-	d := v1mockdispatcher.NewV1Dispatcher()
-	i := v1mockinterpreter.NewV1Interpreter()
-	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
-
-	ctx := context.Background()
-	spaceId := uuid.New()
-
-	// 1. Setup Space File
-	fileId := uuid.New()
-	_ = p.UpsertFileWithAsset(ctx, &v1.File{
-		Id:       fileId,
-		SpaceId:  &spaceId,
-		Path:     "docs",
-		Filename: "readme.md",
-	}, &v1.Asset{Id: uuid.New()})
-
-	// 2. Seed Chunks
-	expectedContent := "# Project Documentation"
-	p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
-		{
-			Id:         uuid.New(),
-			FileId:     fileId,
-			ChunkIndex: 0,
-			Content:    expectedContent,
-			Embedding:  []float32{0.1, 0.1},
-		},
-	})
-
-	// 3. Setup Session (Connected to Space)
-	sessionId := uuid.New()
-	_ = p.CreateSession(ctx, &v1.Session{
-		Id:      sessionId,
-		SpaceId: &spaceId,
-	})
-
-	// 4. Add a message
-	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
-		SessionId: sessionId,
-		Role:      "user",
-		Parts:     []v1.Part{{Type: "text", Text: "Help me"}},
-	}, nil)
-
-	// 5. Create Job
-	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeExtract,
-		Payload: payload,
-		Status:  v1.JobStatusPending,
-	}
-	_ = p.CreateJob(ctx, job)
-
-	// Act
-	err := s.ProcessJob(ctx, job)
-	require.NoError(t, err)
-
-	// Assert
-	seenChunks := i.ExtractChunks()
-	require.NotEmpty(t, seenChunks, "Interpreter should receive space-scoped chunks")
-	assert.Equal(t, fileId, seenChunks[0].File.Id)
-	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
-}
-
-func TestProcessJob_Extract_UpdatesTasksOnly(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	b := v1memorybuffer.NewV1Buffer()
-	d := v1mockdispatcher.NewV1Dispatcher()
-
-	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithExtractRsp(
-			[]interpreter.TaskAction{
-				{
-					Type:    interpreter.TaskActionInsert,
-					Payload: map[string]any{"after_task_order": 0.0, "task_description": "New Task"},
-				},
-			},
-		),
-	)
-	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
-
-	sessionId := uuid.New()
-	ctx := context.Background()
-
-	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
-
-	_ = p.CreateMessageWithAssets(ctx, &v1.Message{
-		SessionId: sessionId, Role: "user", Parts: []v1.Part{{Type: "text", Text: "do work"}},
-	}, nil)
-
-	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeExtract,
-		Payload: payload,
-		Status:  v1.JobStatusPending,
-	}
-	_ = p.CreateJob(ctx, job)
-
-	// Act
-	err := s.ProcessJob(ctx, job)
-	require.NoError(t, err)
-
-	// Assert
-	updated := p.Jobs()[job.Id]
-	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
-
-	assert.Len(t, p.Skills(), 0, "Extract job should not create skills")
-
-	tasks, _ := p.FetchCurrentTasks(ctx, sessionId, nil)
-	assert.Len(t, tasks, 3, "Extract job should create tasks")
-}
-
 func TestProcessJob_Distill_DistillsSkillsOnly(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -590,6 +392,168 @@ func TestProcessJob_Distills_FailsIfEmbedderFails(t *testing.T) {
 	assert.Len(t, p.Skills(), 0)
 }
 
+func TestProcessJob_ProcessingOrder(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithDistillRsp(
+			[]interpreter.SkillAction{
+				{
+					Type: interpreter.SkillActionInsert,
+					Payload: map[string]any{
+						"trigger": "test",
+						"sop":     "test",
+					},
+				},
+			},
+		),
+	)
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
+
+	sessionId := uuid.New()
+	spaceId := uuid.New()
+	ctx := context.Background()
+
+	// Create session linked to space
+	require.NoError(t, p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId}))
+
+	// Create OLDER message
+	msg1 := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "First Message"}},
+		CreatedAt: time.Now().Add(-10 * time.Minute),
+	}
+	p.CreateMessageWithAssets(ctx, msg1, nil)
+
+	// Create NEWER message
+	msg2 := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "assistant",
+		Parts:     []v1.Part{{Type: "text", Text: "Second Message"}},
+		CreatedAt: time.Now().Add(-5 * time.Minute),
+	}
+	p.CreateMessageWithAssets(ctx, msg2, nil)
+
+	payload := v1.SessionJobPayload{SessionId: sessionId}
+	data, _ := json.Marshal(payload)
+	job := &v1.Job{Id: uuid.New(), Type: v1.JobTypeDistill, Payload: data, Status: v1.JobStatusPending}
+	p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert: Verify the interpreter received messages in the correct chronological order
+	history := i.DistillHistory()
+	assert.Len(t, history, 2)
+	assert.Equal(t, "First Message", history[0].Parts[0].Text)
+	assert.Equal(t, "Second Message", history[1].Parts[0].Text)
+}
+
+func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter()
+	e := mockembedder.NewEmbedder()
+	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	// Session with NO Space
+	_ = p.CreateSession(ctx, &v1.Session{
+		Id:      sessionId,
+		SpaceId: nil,
+	})
+
+	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
+	job := &v1.Job{
+		Id:      uuid.New(),
+		Type:    v1.JobTypeDistill,
+		Payload: payload,
+		Status:  v1.JobStatusPending,
+	}
+	_ = p.CreateJob(ctx, job)
+
+	// Act
+	err := s.ProcessJob(ctx, job)
+	require.NoError(t, err)
+
+	// Assert
+	updated := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
+	assert.Len(t, p.Skills(), 0, "Should NOT save skill if session has no space")
+}
+
+func TestProcessJob_EnforcesJobLock(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1worker.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
+
+	job := &v1.Job{
+		Id:     uuid.New(),
+		Type:   v1.JobTypeDistill,
+		Status: v1.JobStatusRunning,
+	}
+	_ = p.CreateJob(context.Background(), job)
+
+	// Act
+	err := s.ProcessJob(context.Background(), job)
+	require.NoError(t, err)
+
+	// Assert
+	updated := p.Jobs()[job.Id]
+	assert.Equal(t, v1.JobStatusRunning, updated.Status)
+}
+
+func TestProcessJob_IgnoresUnknownTaskTypes(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	s := v1worker.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
+
+	job := &v1.Job{
+		Id:     uuid.New(),
+		Type:   "unknown_job_type",
+		Status: v1.JobStatusPending,
+	}
+	_ = p.CreateJob(context.Background(), job)
+
+	// Act
+	err := s.ProcessJob(context.Background(), job)
+
+	// Assert
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown job type")
+}
+
 func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
@@ -755,76 +719,7 @@ func TestIngestionLoop_TriggersAutoExtract(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond, "Tasks should be auto-extracted")
 }
 
-func TestProcessJob_ProcessingOrder(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	b := v1memorybuffer.NewV1Buffer()
-	d := v1mockdispatcher.NewV1Dispatcher()
-	i := v1mockinterpreter.NewV1Interpreter(
-		v1mockinterpreter.WithDistillRsp(
-			[]interpreter.SkillAction{
-				{
-					Type: interpreter.SkillActionInsert,
-					Payload: map[string]any{
-						"trigger": "test",
-						"sop":     "test",
-					},
-				},
-			},
-		),
-	)
-	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
-
-	sessionId := uuid.New()
-	spaceId := uuid.New()
-	ctx := context.Background()
-
-	// Create session linked to space
-	require.NoError(t, p.CreateSession(ctx, &v1.Session{Id: sessionId, SpaceId: &spaceId}))
-
-	// Create OLDER message
-	msg1 := &v1.Message{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		Role:      "user",
-		Parts:     []v1.Part{{Type: "text", Text: "First Message"}},
-		CreatedAt: time.Now().Add(-10 * time.Minute),
-	}
-	p.CreateMessageWithAssets(ctx, msg1, nil)
-
-	// Create NEWER message
-	msg2 := &v1.Message{
-		Id:        uuid.New(),
-		SessionId: sessionId,
-		Role:      "assistant",
-		Parts:     []v1.Part{{Type: "text", Text: "Second Message"}},
-		CreatedAt: time.Now().Add(-5 * time.Minute),
-	}
-	p.CreateMessageWithAssets(ctx, msg2, nil)
-
-	payload := v1.SessionJobPayload{SessionId: sessionId}
-	data, _ := json.Marshal(payload)
-	job := &v1.Job{Id: uuid.New(), Type: v1.JobTypeDistill, Payload: data, Status: v1.JobStatusPending}
-	p.CreateJob(ctx, job)
-
-	// Act
-	err := s.ProcessJob(ctx, job)
-	require.NoError(t, err)
-
-	// Assert: Verify the interpreter received messages in the correct chronological order
-	history := i.DistillHistory()
-	assert.Len(t, history, 2)
-	assert.Equal(t, "First Message", history[0].Parts[0].Text)
-	assert.Equal(t, "Second Message", history[1].Parts[0].Text)
-}
-
-func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
+func TestIngestionLoop_Extract_IncludesGlobalFileContext(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -836,83 +731,168 @@ func TestProcessJob_SkipsDistillIfSpaceIsNil(t *testing.T) {
 	d := v1mockdispatcher.NewV1Dispatcher()
 	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
+	w := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
+
+	ctx := context.Background()
+
+	fileId := uuid.New()
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		SpaceId:  nil,
+		Path:     "src",
+		Filename: "main.go",
+	}, &v1.Asset{Id: uuid.New()})
+
+	expectedContent := "package main\nfunc main() {}"
+	_ = p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
+		{
+			Id:         uuid.New(),
+			FileId:     fileId,
+			ChunkIndex: 0,
+			Content:    expectedContent,
+			Embedding:  []float32{0.1, 0.2},
+		},
+	})
+
+	sessionId := uuid.New()
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
+
+	_ = b.Add(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Analyze this"}},
+		CreatedAt: time.Now(),
+	}, nil)
+
+	// Act
+	ingestionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.StartIngestion(ingestionCtx)
+
+	// Assert
+	assert.Eventually(t, func() bool {
+		seenChunks := i.ExtractChunks()
+		return len(seenChunks) > 0
+	}, 5*time.Second, 100*time.Millisecond, "Interpreter should receive global chunks")
+
+	seenChunks := i.ExtractChunks()
+	assert.Equal(t, fileId, seenChunks[0].File.Id)
+	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
+}
+
+func TestIngestionLoop_Extract_IncludesSpaceFileContext(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter()
+	e := mockembedder.NewEmbedder()
+	w := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
+
+	ctx := context.Background()
+	spaceId := uuid.New()
+
+	fileId := uuid.New()
+	_ = p.UpsertFileWithAsset(ctx, &v1.File{
+		Id:       fileId,
+		SpaceId:  &spaceId,
+		Path:     "docs",
+		Filename: "readme.md",
+	}, &v1.Asset{Id: uuid.New()})
+
+	expectedContent := "# Project Documentation"
+	p.SaveFileChunks(ctx, fileId, []v1.FileChunk{
+		{
+			Id:         uuid.New(),
+			FileId:     fileId,
+			ChunkIndex: 0,
+			Content:    expectedContent,
+			Embedding:  []float32{0.1, 0.1},
+		},
+	})
+
+	sessionId := uuid.New()
+	_ = p.CreateSession(ctx, &v1.Session{
+		Id:      sessionId,
+		SpaceId: &spaceId,
+	})
+
+	_ = b.Add(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Help me"}},
+		CreatedAt: time.Now(),
+	}, nil)
+
+	// Act
+	ingestionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.StartIngestion(ingestionCtx)
+
+	// Assert
+	assert.Eventually(t, func() bool {
+		seenChunks := i.ExtractChunks()
+		return len(seenChunks) > 0
+	}, 5*time.Second, 100*time.Millisecond, "Interpreter should receive space-scoped chunks")
+
+	seenChunks := i.ExtractChunks()
+	assert.Equal(t, fileId, seenChunks[0].File.Id)
+	assert.Equal(t, expectedContent, seenChunks[0].Chunk.Content)
+}
+
+func TestIngestionLoop_Extract_UpdatesTasksOnly(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithExtractRsp(
+			[]interpreter.TaskAction{
+				{
+					Type:    interpreter.TaskActionInsert,
+					Payload: map[string]any{"after_task_order": 0.0, "task_description": "New Task"},
+				},
+			},
+		),
+	)
+	e := mockembedder.NewEmbedder()
+	w := v1worker.NewV1Service(p, b, d, v1mockfiler.NewV1Filer(), i, e)
 
 	sessionId := uuid.New()
 	ctx := context.Background()
 
-	// Session with NO Space
-	_ = p.CreateSession(ctx, &v1.Session{
-		Id:      sessionId,
-		SpaceId: nil,
-	})
+	_ = p.CreateSession(ctx, &v1.Session{Id: sessionId})
 
-	payload, _ := json.Marshal(v1.SessionJobPayload{SessionId: sessionId})
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeDistill,
-		Payload: payload,
-		Status:  v1.JobStatusPending,
-	}
-	_ = p.CreateJob(ctx, job)
+	_ = b.Add(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "do work"}},
+		CreatedAt: time.Now(),
+	}, nil)
 
 	// Act
-	err := s.ProcessJob(ctx, job)
-	require.NoError(t, err)
+	ingestionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.StartIngestion(ingestionCtx)
 
 	// Assert
-	updated := p.Jobs()[job.Id]
-	assert.Equal(t, v1.JobStatusSuccess, updated.Status)
-	assert.Len(t, p.Skills(), 0, "Should NOT save skill if session has no space")
-}
+	assert.Eventually(t, func() bool {
+		tasks, _ := p.FetchCurrentTasks(ctx, sessionId, nil)
+		return len(tasks) >= 1
+	}, 5*time.Second, 100*time.Millisecond, "Extract should create tasks")
 
-func TestProcessJob_EnforcesJobLock(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
-
-	job := &v1.Job{
-		Id:     uuid.New(),
-		Type:   v1.JobTypeDistill,
-		Status: v1.JobStatusRunning,
-	}
-	_ = p.CreateJob(context.Background(), job)
-
-	// Act
-	err := s.ProcessJob(context.Background(), job)
-	require.NoError(t, err)
-
-	// Assert
-	updated := p.Jobs()[job.Id]
-	assert.Equal(t, v1.JobStatusRunning, updated.Status)
-}
-
-func TestProcessJob_IgnoresUnknownTaskTypes(t *testing.T) {
-	if len(os.Getenv("INTEGRATION")) > 0 {
-		t.Log("SKIPPING UNIT TEST")
-		return
-	}
-
-	// Arrange
-	p := v1mockpersister.NewV1Persister()
-	s := v1worker.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), v1mockinterpreter.NewV1Interpreter(), mockembedder.NewEmbedder())
-
-	job := &v1.Job{
-		Id:     uuid.New(),
-		Type:   "unknown_job_type",
-		Status: v1.JobStatusPending,
-	}
-	_ = p.CreateJob(context.Background(), job)
-
-	// Act
-	err := s.ProcessJob(context.Background(), job)
-
-	// Assert
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown job type")
+	assert.Len(t, p.Skills(), 0, "Extract should not create skills")
 }

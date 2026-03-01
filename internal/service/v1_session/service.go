@@ -427,10 +427,6 @@ func (s *V1Service) ListTasks(ctx context.Context, in ListTasksInput) (*ListTask
 	}, nil
 }
 
-func (s *V1Service) ExtractTasks(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
-	return s.dispatchSessionJob(ctx, sessionId, messageWindow, v1.JobTypeExtract)
-}
-
 func (s *V1Service) DistillSkill(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
 	return s.dispatchSessionJob(ctx, sessionId, messageWindow, v1.JobTypeDistill)
 }
