@@ -265,29 +265,6 @@ func (h *v1Handler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	httphandler.WrtJSON(w, http.StatusOK, out)
 }
 
-func (h *v1Handler) ExtractTasks(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	id, err := uuid.Parse(vars["session_id"])
-	if err != nil {
-		httphandler.WrtErr(w, http.StatusBadRequest, "Invalid Session ID")
-		return
-	}
-
-	var messageWindow int
-	if l := r.URL.Query().Get("message_window"); len(l) > 0 {
-		if val, err := strconv.Atoi(l); err == nil && val > 0 {
-			messageWindow = val
-		}
-	}
-
-	if err := h.service.ExtractTasks(r.Context(), id, messageWindow); err != nil {
-		httphandler.WrtErr(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	httphandler.WrtJSON(w, http.StatusAccepted, map[string]string{"status": "extraction_initiated"})
-}
-
 func (h *v1Handler) DistillSkill(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := uuid.Parse(vars["session_id"])

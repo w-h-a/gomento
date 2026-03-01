@@ -86,18 +86,6 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	}
 
 	switch job.Type {
-	case v1.JobTypeExtract:
-		var payload v1.SessionJobPayload
-		if err := json.Unmarshal(job.Payload, &payload); err != nil {
-			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-			span.RecordError(err)
-			return fmt.Errorf("invalid job payload: %w", err)
-		}
-		if err := s.extract(ctx, payload.SessionId, payload.MessageWindow); err != nil {
-			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-			span.RecordError(err)
-			return err
-		}
 	case v1.JobTypeDistill:
 		var payload v1.SessionJobPayload
 		if err := json.Unmarshal(job.Payload, &payload); err != nil {
