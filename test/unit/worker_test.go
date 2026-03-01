@@ -652,7 +652,7 @@ func TestProcessJob_IngestFile_CalculatesAndPersistsEmbedding(t *testing.T) {
 	assert.Contains(t, e.Input(), content)
 }
 
-func TestProcessJob_EmbedMessage_CalculatesAndPersistsEmbedding(t *testing.T) {
+func TestIngestionLoop_DrainsBatchAndPersists(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -663,45 +663,96 @@ func TestProcessJob_EmbedMessage_CalculatesAndPersistsEmbedding(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
+	i := v1mockinterpreter.NewV1Interpreter()
 	e := mockembedder.NewEmbedder()
-	s := v1worker.NewV1Service(p, b, d, f, v1mockinterpreter.NewV1Interpreter(), e)
+	w := v1worker.NewV1Service(p, b, d, f, i, e)
 
+	sessionId := uuid.New()
 	ctx := context.Background()
 
-	msgId := uuid.New()
-
-	err := p.CreateMessageWithAssets(ctx, &v1.Message{
-		Id:    msgId,
-		Role:  "user",
-		Parts: []v1.Part{{Type: "text", Text: "Embed me please"}},
-	}, nil)
+	err := p.CreateSession(ctx, &v1.Session{Id: sessionId})
 	require.NoError(t, err)
 
-	payload, _ := json.Marshal(v1.EmbedMessageJobPayload{
-		MessageId: msgId,
-	})
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeEmbedMessage,
-		Payload: payload,
-		Status:  v1.JobStatusPending,
+	msg := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "test"}},
+		CreatedAt: time.Now(),
 	}
-	p.CreateJob(ctx, job)
+
+	err = b.Add(ctx, msg, nil)
+	require.NoError(t, err)
 
 	// Act
-	err = s.ProcessJob(ctx, job)
-	require.NoError(t, err)
+	ingestionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.StartIngestion(ingestionCtx)
 
 	// Assert
-	updatedJob := p.Jobs()[job.Id]
-	assert.Equal(t, v1.JobStatusSuccess, updatedJob.Status)
+	assert.Eventually(t, func() bool {
+		msgs, _ := p.ListMessages(ctx, sessionId)
+		return len(msgs) >= 1
+	}, 5*time.Second, 100*time.Millisecond, "Message should be persisted")
 
-	updatedMsg, err := p.GetMessage(ctx, msgId)
+	persisted, _ := p.ListMessages(ctx, sessionId)
+	assert.Equal(t, "test", persisted[0].Parts[0].Text)
+	assert.Equal(t, 0, b.Count(ctx), "Buffer queue should be drained")
+}
+
+func TestIngestionLoop_TriggersAutoExtract(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	i := v1mockinterpreter.NewV1Interpreter(
+		v1mockinterpreter.WithExtractRsp(
+			[]interpreter.TaskAction{
+				{
+					Type: interpreter.TaskActionInsert,
+					Payload: map[string]any{
+						"after_task_order": 0.0,
+						"task_description": "Auto-extracted task",
+					},
+				},
+			},
+		))
+	e := mockembedder.NewEmbedder()
+	w := v1worker.NewV1Service(p, b, d, f, i, e)
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	err := p.CreateSession(ctx, &v1.Session{Id: sessionId})
 	require.NoError(t, err)
-	assert.NotNil(t, updatedMsg)
-	assert.Equal(t, float32(0.01), updatedMsg.Embedding[0])
 
-	assert.Contains(t, e.Input(), "Embed me please")
+	msg := &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "test"}},
+		CreatedAt: time.Now(),
+	}
+
+	err = b.Add(ctx, msg, nil)
+	require.NoError(t, err)
+
+	// Act
+	ingestionCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	go w.StartIngestion(ingestionCtx)
+
+	// Assert
+	assert.Eventually(t, func() bool {
+		tasks, _ := p.FetchCurrentTasks(ctx, sessionId, nil)
+		return len(tasks) >= 1
+	}, 5*time.Second, 100*time.Millisecond, "Tasks should be auto-extracted")
 }
 
 func TestProcessJob_ProcessingOrder(t *testing.T) {

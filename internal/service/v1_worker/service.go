@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/tmc/langchaingo/textsplitter"
@@ -25,7 +26,10 @@ import (
 )
 
 const (
-	maxFileBytes = 10 * 1024 * 1024 // 10MB
+	maxFileBytes      = 10 * 1024 * 1024 // 10MB
+	ingestionInterval = 500 * time.Millisecond
+	ingestionBatchMax = 50
+	extractTimeout    = 60 * time.Second
 )
 
 type V1Service struct {
@@ -41,6 +45,20 @@ type V1Service struct {
 
 func (s *V1Service) Subscribe(ctx context.Context, cb func(context.Context, *v1.Job) error, qname string) error {
 	return s.dispatcher.Subscribe(ctx, cb, dispatcher.SubscribeWithQueue(qname))
+}
+
+func (s *V1Service) StartIngestion(ctx context.Context) {
+	ticker := time.NewTicker(ingestionInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.processIngestionBatch(ctx)
+		}
+	}
 }
 
 func (s *V1Service) Close(ctx context.Context) error {
@@ -104,18 +122,6 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 			span.RecordError(err)
 			return err
 		}
-	case v1.JobTypeEmbedMessage:
-		var payload v1.EmbedMessageJobPayload
-		if err := json.Unmarshal(job.Payload, &payload); err != nil {
-			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-			span.RecordError(err)
-			return fmt.Errorf("invalid job payload: %w", err)
-		}
-		if err := s.embedMessage(ctx, payload.MessageId); err != nil {
-			s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
-			span.RecordError(err)
-			return err
-		}
 	default:
 		s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusFailed)
 		err := fmt.Errorf("unknown job type: %s", job.Type)
@@ -127,6 +133,88 @@ func (s *V1Service) ProcessJob(ctx context.Context, job *v1.Job) error {
 	span.AddEvent("job_success")
 
 	return s.persister.UpdateJobStatus(ctx, job.Id, v1.JobStatusSuccess)
+}
+
+func (s *V1Service) processIngestionBatch(ctx context.Context) {
+	ctx, span := s.tracer.Start(ctx, "worker.processIngestionBatch")
+	defer span.End()
+
+	batch, remaining, err := s.buffer.PopBatch(ctx, ingestionBatchMax)
+	if err != nil {
+		span.RecordError(err)
+		slog.ErrorContext(ctx, "failed to pop ingestion batch", "error", err)
+		return
+	}
+
+	span.SetAttributes(
+		attribute.Int("batch.size", len(batch)),
+		attribute.Int("queue.remaining", remaining),
+	)
+
+	if len(batch) == 0 {
+		return
+	}
+
+	affectedSessions := map[uuid.UUID]struct{}{}
+
+	for _, bm := range batch {
+		if err := s.persister.CreateMessageWithAssets(ctx, &bm.Message, bm.Assets); err != nil {
+			span.RecordError(err)
+			slog.ErrorContext(ctx, "failed to persist buffered message", "message_id", bm.Message.Id, "error", err)
+			continue
+		}
+
+		if err := s.embedMessage(ctx, bm.Message.Id); err != nil {
+			span.RecordError(err)
+			slog.ErrorContext(ctx, "failed to embed message", "message_id", bm.Message.Id, "error", err)
+		}
+
+		affectedSessions[bm.Message.SessionId] = struct{}{}
+	}
+
+	for sessionId := range affectedSessions {
+		go func() {
+			extractCtx, cancel := context.WithTimeout(context.Background(), extractTimeout)
+			defer cancel()
+			if err := s.extract(extractCtx, sessionId, 0); err != nil {
+				slog.ErrorContext(ctx, "failed to extract", "session_id", sessionId, "error", err)
+			}
+		}()
+	}
+}
+
+func (s *V1Service) embedMessage(ctx context.Context, messageId uuid.UUID) error {
+	ctx, span := s.tracer.Start(ctx, "worker.embedMessage")
+	defer span.End()
+
+	msg, err := s.persister.GetMessage(ctx, messageId)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+	if msg == nil {
+		return service.ErrMessageNotFound
+	}
+
+	var sb strings.Builder
+	for _, p := range msg.Parts {
+		if len(p.Text) > 0 {
+			sb.WriteString(p.Text + "\n")
+		}
+	}
+
+	text := sb.String()
+	if len(strings.TrimSpace(text)) == 0 {
+		return nil
+	}
+
+	vec, err := s.embedder.Embed(ctx, text)
+	if err != nil {
+		span.RecordError(err)
+		return err
+	}
+
+	return s.persister.UpdateMessageEmbedding(ctx, messageId, vec)
 }
 
 func (s *V1Service) extract(ctx context.Context, sessionId uuid.UUID, messageWindow int) error {
@@ -627,40 +715,6 @@ func (s *V1Service) ingestFile(ctx context.Context, fileId uuid.UUID) error {
 	}
 
 	return nil
-}
-
-func (s *V1Service) embedMessage(ctx context.Context, messageId uuid.UUID) error {
-	ctx, span := s.tracer.Start(ctx, "worker.embedMessage")
-	defer span.End()
-
-	msg, err := s.persister.GetMessage(ctx, messageId)
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
-	if msg == nil {
-		return service.ErrMessageNotFound
-	}
-
-	var sb strings.Builder
-	for _, p := range msg.Parts {
-		if len(p.Text) > 0 {
-			sb.WriteString(p.Text + "\n")
-		}
-	}
-
-	text := sb.String()
-	if len(strings.TrimSpace(text)) == 0 {
-		return nil
-	}
-
-	vec, err := s.embedder.Embed(ctx, text)
-	if err != nil {
-		span.RecordError(err)
-		return err
-	}
-
-	return s.persister.UpdateMessageEmbedding(ctx, messageId, vec)
 }
 
 func (s *V1Service) getMessageContent(m v1.Message) string {

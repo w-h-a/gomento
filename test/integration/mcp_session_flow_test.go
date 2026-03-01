@@ -109,6 +109,13 @@ func TestAPI_Mcp_Session_Flow(t *testing.T) {
 	dupAssetId := dupFilePart["asset_id"].(string)
 	assert.Equal(t, assetId, dupAssetId, "Uploading identical content should result in the same Asset ID")
 
+	// Wait for ingestion loop to persist messages
+	assert.Eventually(t, func() bool {
+		var count int
+		db.QueryRow("SELECT count(*) FROM messages WHERE session_id = $1", sessionId).Scan(&count)
+		return count >= 4
+	}, 5*time.Second, 100*time.Millisecond, "Messages should be persisted by ingestion loop")
+
 	// Verification: Pagination
 	// Fetch Page 1 (Limit 1) - Should get the latest message (msg4)
 	page1 := getMessagesViaMcp(t, client, ctx, sessionId, 1, "", false)
@@ -171,49 +178,26 @@ func TestAPI_Mcp_Session_Flow(t *testing.T) {
 	assert.Equal(t, spaceId.String(), sessDetails["space_id"])
 
 	// ==========================================
-	// Scenario 4: Worker Checkpoint (Extract Tasks)
+	// Scenario 4: Verify Auto-Extracted Tasks via MCP
 	// ==========================================
-	t.Log("Step 4: Triggering Task Extraction via MCP")
+	t.Log("Step 4: Verify Auto-Extracted Tasks via MCP")
 
-	result, err = client.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "extract_tasks",
-			Arguments: map[string]any{
-				"session_id": sessionId,
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, result.IsError)
-
-	// Wait for async worker
 	assert.Eventually(t, func() bool {
-		var status string
-		err := db.QueryRow(`
-            SELECT status FROM jobs 
-            WHERE payload->>'session_id' = $1 AND type = 'extract_session' 
-            ORDER BY created_at DESC LIMIT 1`,
-			sessionId,
-		).Scan(&status)
-		return err == nil && status == "success"
-	}, 5*time.Second, 100*time.Millisecond, "Extraction Job should succeed")
-
-	// Verify Tasks were extracted
-	resTasks, err := client.CallTool(ctx, mcp.CallToolRequest{
-		Params: mcp.CallToolParams{
-			Name: "list_tasks",
-			Arguments: map[string]any{
-				"session_id": sessionId,
+		resTasks, err := client.CallTool(ctx, mcp.CallToolRequest{
+			Params: mcp.CallToolParams{
+				Name: "list_tasks",
+				Arguments: map[string]any{
+					"session_id": sessionId,
+				},
 			},
-		},
-	})
-	require.NoError(t, err)
-	require.False(t, resTasks.IsError)
-
-	var tasksOut v1session.ListTasksOutput
-	json.Unmarshal([]byte(resTasks.Content[0].(mcp.TextContent).Text), &tasksOut)
-
-	assert.NotEmpty(t, tasksOut.Items)
+		})
+		if err != nil || resTasks.IsError {
+			return false
+		}
+		var tasksOut v1session.ListTasksOutput
+		json.Unmarshal([]byte(resTasks.Content[0].(mcp.TextContent).Text), &tasksOut)
+		return len(tasksOut.Items) > 0
+	}, 5*time.Second, 100*time.Millisecond, "Tasks should be auto-extracted by ingestion loop")
 
 	// ==========================================
 	// Scenario 5: Worker Finish (Distill Skill)

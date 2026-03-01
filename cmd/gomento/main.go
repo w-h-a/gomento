@@ -31,7 +31,6 @@ type CLI struct {
 	Version      string `env:"VERSION" default:"v0.1.0"`
 	SessionQName string `env:"SESSION_Q_NAME" default:"session"`
 	FileQName    string `env:"FILE_Q_NAME" default:"file"`
-	MessageQName string `env:"MESSAGE_Q_NAME" default:"message"`
 
 	LogsExporterLocation   string `env:"LOGS_EXPORTER_LOCATION" default:"stdout"`
 	TracesExporterLocation string `env:"TRACES_EXPORTER_LOCATION" default:"jaeger:4318"`
@@ -192,7 +191,6 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 			cli.FilerPassword,
 			cli.SessionQName,
 			cli.FileQName,
-			cli.MessageQName,
 		)
 		if err != nil {
 			return err
@@ -249,6 +247,8 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	if cli.Mode == "" || cli.Mode == "worker" {
+		ingestionCtx, ingestionCancel := context.WithCancel(ctx)
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -262,16 +262,16 @@ func (c *RunAllCmd) Run(cli *CLI) error {
 					if err := workerService.Subscribe(ctx, workerService.ProcessJob, cli.FileQName); err != nil {
 						return err
 					}
-					if err := workerService.Subscribe(ctx, workerService.ProcessJob, cli.MessageQName); err != nil {
-						return err
-					}
 					return nil
 				},
 				func(ctx context.Context) error {
+					ingestionCancel()
 					return workerService.Close(ctx)
 				},
 			)
 		}()
+
+		go workerService.StartIngestion(ingestionCtx)
 	}
 
 	if cli.Mode == "" || cli.Mode == "server" {

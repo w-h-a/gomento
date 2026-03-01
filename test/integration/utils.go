@@ -99,15 +99,18 @@ func setupMcpServer(t *testing.T) (*mcpclient.Client, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file", "message")
+	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, b, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "file")
-		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "message")
 	}()
+
+	ingestionCtx, ingestionCancel := context.WithCancel(ctx)
+	t.Cleanup(ingestionCancel)
+	go workerSvc.StartIngestion(ingestionCtx)
 
 	rawMcpServer := mcpserver.NewMCPServer("test-mcp", "1.0.0")
 
@@ -182,15 +185,18 @@ func setupHttpServer(t *testing.T) (*http.Client, string, *sql.DB, *s3.Client) {
 	)
 
 	spaceSvc := v1space.NewV1Service(p, e)
-	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file", "message")
+	sessSvc := v1session.NewV1Service(p, b, d, f, "session", "file")
 	fileSvc := v1file.NewV1Service(p, d, f, "file")
 	workerSvc := v1worker.NewV1Service(p, b, d, f, i, e)
 
 	go func() {
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "session")
 		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "file")
-		workerSvc.Subscribe(ctx, workerSvc.ProcessJob, "message")
 	}()
+
+	ingestionCtx, ingestionCancel := context.WithCancel(ctx)
+	t.Cleanup(ingestionCancel)
+	go workerSvc.StartIngestion(ingestionCtx)
 
 	r, _ := gomento.RegisterV1HttpHandlers(
 		ctx,

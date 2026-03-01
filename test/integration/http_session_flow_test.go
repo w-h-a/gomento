@@ -91,6 +91,13 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	dupAssetId := dupFilePart["asset_id"].(string)
 	assert.Equal(t, assetId, dupAssetId, "Uploading identical content should result in the same Asset ID")
 
+	// Wait for ingestion loop to persist messages
+	assert.Eventually(t, func() bool {
+		var count int
+		db.QueryRow("SELECT count(*) FROM messages WHERE session_id = $1", sessionId).Scan(&count)
+		return count >= 4
+	}, 5*time.Second, 100*time.Millisecond, "Messages should be persisted by ingestion loop")
+
 	// Verification: Pagination
 	// Fetch Page 1 (Limit 1) - Should get the latest message (msg4)
 	page1 := getMessagesViaHttp(t, client, baseURL, sessionId, 1, "", false)
@@ -134,37 +141,21 @@ func TestAPI_Http_Session_Flow(t *testing.T) {
 	assert.Equal(t, spaceId.String(), sessDetails["space_id"])
 
 	// ==========================================
-	// Scenario 4: Worker Trigger (Extract Tasks)
+	// Scenario 4: Verify Auto-Extracted Tasks
 	// ==========================================
-	t.Log("Step 4: Triggering Task Extraction via HTTP")
+	t.Log("Step 4: Verify Auto-Extracted Tasks via HTTP")
 
-	req, _ = http.NewRequest("POST", fmt.Sprintf("%s/api/v1/sessions/%s/extract", baseURL, sessionId), nil)
-	extRsp, err := client.Do(req)
-	require.NoError(t, err)
-	defer extRsp.Body.Close()
-	assert.Equal(t, http.StatusAccepted, extRsp.StatusCode)
-
-	// Wait for async worker
 	assert.Eventually(t, func() bool {
-		var status string
-		err := db.QueryRow(`
-            SELECT status FROM jobs 
-            WHERE payload->>'session_id' = $1 AND type = 'extract_session' 
-            ORDER BY created_at DESC LIMIT 1`,
-			sessionId,
-		).Scan(&status)
-		return err == nil && status == "success"
-	}, 5*time.Second, 100*time.Millisecond, "Extraction Job should succeed")
-
-	// Verify Tasks were extracted
-	req, _ = http.NewRequest("GET", fmt.Sprintf("%s/api/v1/sessions/%s/tasks", baseURL, sessionId), nil)
-	getTasksRsp, err := client.Do(req)
-	require.NoError(t, err)
-	defer getTasksRsp.Body.Close()
-	var tasksRsp v1session.ListTasksOutput
-	json.NewDecoder(getTasksRsp.Body).Decode(&tasksRsp)
-
-	assert.NotEmpty(t, tasksRsp.Items)
+		req, _ := http.NewRequest("GET", fmt.Sprintf("%s/api/v1/sessions/%s/tasks", baseURL, sessionId), nil)
+		rsp, err := client.Do(req)
+		if err != nil {
+			return false
+		}
+		defer rsp.Body.Close()
+		var tasksRsp v1session.ListTasksOutput
+		json.NewDecoder(rsp.Body).Decode(&tasksRsp)
+		return len(tasksRsp.Items) > 0
+	}, 10*time.Second, 500*time.Millisecond, "Tasks should be auto-extracted by ingestion loop")
 
 	// ==========================================
 	// Scenario 5: Worker Trigger (Distill Skill)
