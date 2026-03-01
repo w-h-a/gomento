@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -34,7 +35,6 @@ type V1Service struct {
 	tracer       trace.Tracer
 	sessionQName string
 	fileQName    string
-	messageQName string
 }
 
 func (s *V1Service) Create(ctx context.Context, spaceId *uuid.UUID) (*v1.Session, error) {
@@ -235,14 +235,36 @@ func (s *V1Service) AddMessage(ctx context.Context, in SendMessageInput) (*v1.Me
 		SessionId: in.SessionId,
 		Role:      in.Role,
 		Parts:     finalParts,
+		CreatedAt: time.Now(),
 	}
 
-	if err := s.persister.CreateMessageWithAssets(ctx, msg, assets); err != nil {
+	for partIdx, a := range assets {
+		if partIdx < len(msg.Parts) {
+			msg.Parts[partIdx].AssetId = &a.Id
+		}
+	}
+
+	recent, err := s.buffer.GetRecent(ctx, in.SessionId)
+	if err != nil {
 		span.RecordError(err)
-		return nil, fmt.Errorf("failed to persist message: %w", err)
+		return nil, err
 	}
 
-	if err := s.dispatchMessageJob(ctx, msg.Id); err != nil {
+	if len(recent) > 0 {
+		lastId := recent[len(recent)-1].Id
+		msg.ParentId = &lastId
+	} else {
+		coldMsgs, err := s.persister.ListMessages(ctx, in.SessionId, persister.WithLimit(1))
+		if err != nil {
+			span.RecordError(err)
+			return nil, err
+		}
+		if len(coldMsgs) > 0 {
+			msg.ParentId = &coldMsgs[0].Id
+		}
+	}
+
+	if err := s.buffer.Add(ctx, msg, assets); err != nil {
 		span.RecordError(err)
 		return nil, err
 	}
@@ -293,6 +315,34 @@ func (s *V1Service) ListMessages(ctx context.Context, in ListMessagesInput) (*Li
 	if err != nil {
 		span.RecordError(err)
 		return nil, err
+	}
+
+	if len(in.Cursor) == 0 {
+		hot, err := s.buffer.GetRecent(ctx, in.SessionId)
+		if err != nil {
+			span.RecordError(err)
+			return nil, err
+		}
+
+		span.SetAttributes(attribute.Int("hot.count", len(hot)))
+
+		if len(hot) > 0 {
+			seen := make(map[uuid.UUID]struct{}, len(msgs))
+			for _, m := range msgs {
+				seen[m.Id] = struct{}{}
+			}
+			for _, m := range hot {
+				if _, dup := seen[m.Id]; !dup {
+					msgs = append(msgs, m)
+				}
+			}
+			sort.Slice(msgs, func(i, j int) bool {
+				if msgs[i].CreatedAt.Equal(msgs[j].CreatedAt) {
+					return msgs[i].Id.String() < msgs[j].Id.String()
+				}
+				return msgs[i].CreatedAt.After(msgs[j].CreatedAt)
+			})
+		}
 	}
 
 	span.SetAttributes(attribute.Int("result.count", len(msgs)))
@@ -467,46 +517,6 @@ func (s *V1Service) dispatchFileJob(ctx context.Context, fileId uuid.UUID) error
 	return nil
 }
 
-func (s *V1Service) dispatchMessageJob(ctx context.Context, messageId uuid.UUID) error {
-	ctx, span := s.tracer.Start(ctx, "session.dispatchMessageJob")
-	defer span.End()
-
-	payload := v1.EmbedMessageJobPayload{
-		MessageId: messageId,
-	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	job := &v1.Job{
-		Id:      uuid.New(),
-		Type:    v1.JobTypeEmbedMessage,
-		Payload: data,
-		Status:  v1.JobStatusPending,
-	}
-
-	span.SetAttributes(
-		attribute.String("message.id", messageId.String()),
-		attribute.String("job.id", job.Id.String()),
-		attribute.String("job.type", v1.JobTypeEmbedMessage),
-	)
-
-	if err := s.persister.CreateJob(ctx, job); err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("failed to persist job: %w", err)
-	}
-
-	if err := s.dispatcher.Publish(ctx, job, dispatcher.PublishWithQueue(s.messageQName)); err != nil {
-		span.RecordError(err)
-		return fmt.Errorf("failed to publish job: %w", err)
-	}
-
-	return nil
-}
-
 func NewV1Service(
 	p persister.V1Persister,
 	b buffer.V1Buffer,
@@ -514,7 +524,6 @@ func NewV1Service(
 	f filer.V1Filer,
 	sessionQName string,
 	fileQName string,
-	messageQName string,
 ) *V1Service {
 	s := service.New()
 	return &V1Service{
@@ -526,6 +535,5 @@ func NewV1Service(
 		tracer:       otel.Tracer("github.com/w-h-a/gomento/internal/service/v1_session"),
 		sessionQName: sessionQName,
 		fileQName:    fileQName,
-		messageQName: messageQName,
 	}
 }

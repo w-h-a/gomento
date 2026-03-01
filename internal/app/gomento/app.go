@@ -254,7 +254,6 @@ func InitV1SessionService(
 	filerPassword string,
 	sessionQName string,
 	fileQName string,
-	messageQName string,
 ) (*v1sessionservice.V1Service, error) {
 	p, err := InitV1Persister(ctx, persisterLocation)
 	if err != nil {
@@ -281,7 +280,6 @@ func InitV1SessionService(
 		f,
 		sessionQName,
 		fileQName,
-		messageQName,
 	)
 
 	return sessionService, nil

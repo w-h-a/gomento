@@ -16,7 +16,6 @@ import (
 	v1mockdispatcher "github.com/w-h-a/gomento/internal/client/dispatcher/v1_mock"
 	"github.com/w-h-a/gomento/internal/client/filer"
 	v1mockfiler "github.com/w-h-a/gomento/internal/client/filer/v1_mock"
-	"github.com/w-h-a/gomento/internal/client/persister"
 	v1mockpersister "github.com/w-h-a/gomento/internal/client/persister/v1_mock"
 	"github.com/w-h-a/gomento/internal/service"
 	v1session "github.com/w-h-a/gomento/internal/service/v1_session"
@@ -31,7 +30,7 @@ func TestConnectToSpace_Session(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2")
 
 	validSpaceId := uuid.New()
 	ctx := context.Background()
@@ -60,7 +59,7 @@ func TestConnectToSpace_FailsForMissingSession(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2")
 
 	ctx := context.Background()
 
@@ -79,7 +78,7 @@ func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
 
 	// Arrange
 	p := v1mockpersister.NewV1Persister()
-	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, v1memorybuffer.NewV1Buffer(), v1mockdispatcher.NewV1Dispatcher(), v1mockfiler.NewV1Filer(), "q1", "q2")
 
 	randomSpaceId := uuid.New()
 	ctx := context.Background()
@@ -99,7 +98,7 @@ func TestConnectToSpace_ValidatesSpaceExists(t *testing.T) {
 	assert.Nil(t, current.SpaceId)
 }
 
-func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
+func TestAddMessage_BuffersMessageAndAsset(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -110,7 +109,7 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	spaceId := uuid.New()
 	sessionId := uuid.New()
@@ -149,18 +148,19 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 	assert.Len(t, uploads, 1)
 	assert.Contains(t, uploads, "uploads/log.txt")
 
-	// Assert: Persister Messages
-	msgs, err := p.ListMessages(ctx, sessionId)
+	// Assert: Buffer + Persister Messages
+	hot, err := b.GetRecent(ctx, sessionId)
 	assert.NoError(t, err)
-	assert.Len(t, msgs, 1)
-	assert.Equal(t, "Hello World", msgs[0].Parts[0].Text)
-	assert.Equal(t, *msg.Parts[1].AssetId, *msgs[0].Parts[1].AssetId)
-	assert.Equal(t, "user", msgs[0].Role)
+	assert.Len(t, hot, 1)
+	assert.Equal(t, "Hello World", hot[0].Parts[0].Text)
+	cold, err := p.ListMessages(ctx, sessionId)
+	assert.NoError(t, err)
+	assert.Len(t, cold, 0)
 
 	// Assert: Persister Assets
 	assets, err := p.GetAssets(ctx, []uuid.UUID{*msg.Parts[1].AssetId})
 	assert.NoError(t, err)
-	saved, exists := assets[*msgs[0].Parts[1].AssetId]
+	saved, exists := assets[*msg.Parts[1].AssetId]
 	assert.True(t, exists)
 	assert.Equal(t, "test-bucket", saved.Container)
 	assert.Equal(t, "uploads/log.txt", saved.Path)
@@ -175,28 +175,11 @@ func TestAddMessage_PersistsMessageAndAsset(t *testing.T) {
 
 	// Assert: Persister Jobs
 	jobs := d.Jobs()
-	assert.Len(t, jobs, 2)
-
-	var foundFileJob, foundMsgJob bool
-	for _, j := range jobs {
-		if j.Type == v1.JobTypeIngestFile {
-			foundFileJob = true
-			var payload v1.IngestFileJobPayload
-			json.Unmarshal(j.Payload, &payload)
-			assert.Equal(t, files[0].Id, payload.FileId)
-		}
-		if j.Type == v1.JobTypeEmbedMessage {
-			foundMsgJob = true
-			var payload v1.EmbedMessageJobPayload
-			json.Unmarshal(j.Payload, &payload)
-			assert.Equal(t, msg.Id, payload.MessageId)
-		}
-	}
-	assert.True(t, foundFileJob, "Should dispatch file ingestion job")
-	assert.True(t, foundMsgJob, "Should dispatch message embedding job")
+	assert.Len(t, jobs, 1)
+	assert.Equal(t, v1.JobTypeIngestFile, jobs[0].Type)
 }
 
-func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
+func TestAddMessage_BuffersLinkedMessages(t *testing.T) {
 	if len(os.Getenv("INTEGRATION")) > 0 {
 		t.Log("SKIPPING UNIT TEST")
 		return
@@ -207,7 +190,7 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -226,12 +209,6 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	msg1, err := s.AddMessage(ctx, input1)
 	require.NoError(t, err)
 
-	// Assert: Behavior
-	assert.NotNil(t, msg1)
-	assert.Nil(t, msg1.ParentId)
-	assert.Equal(t, "user", msg1.Role)
-
-	// Act
 	input2 := v1session.SendMessageInput{
 		SessionId: sessionId,
 		Role:      "assistant",
@@ -243,17 +220,107 @@ func TestAddMessage_PersistsLinkedMessages(t *testing.T) {
 	require.NoError(t, err)
 
 	// Assert: Behavior
+	assert.NotNil(t, msg1)
+	assert.Nil(t, msg1.ParentId)
+	assert.Equal(t, "user", msg1.Role)
 	assert.NotNil(t, msg2)
 	assert.Equal(t, msg1.Id, *msg2.ParentId)
 	assert.Equal(t, "assistant", msg2.Role)
 
 	// Assert: State
-	stored, err := p.ListMessages(ctx, sessionId, persister.WithSort(persister.SortOrderAsc))
+	hot, err := b.GetRecent(ctx, sessionId)
 	assert.NoError(t, err)
-	assert.Len(t, stored, 2)
-	assert.Equal(t, msg1.Id, stored[0].Id)
-	assert.Equal(t, msg2.Id, stored[1].Id)
-	assert.Equal(t, msg1.Id, *stored[1].ParentId)
+	assert.Len(t, hot, 2)
+	assert.Equal(t, msg1.Id, hot[0].Id)
+	assert.Equal(t, msg2.Id, hot[1].Id)
+	cold, err := p.ListMessages(ctx, sessionId)
+	assert.NoError(t, err)
+	assert.Len(t, cold, 0)
+}
+
+func TestListMessages_MergesHotAndCold(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
+
+	sessionId := uuid.New()
+	ctx := context.Background()
+
+	p.CreateMessageWithAssets(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Cold"}},
+		CreatedAt: time.Now().Add(-10 * time.Minute),
+	}, nil)
+
+	b.Add(ctx, &v1.Message{
+		Id:        uuid.New(),
+		SessionId: sessionId,
+		Role:      "assistant",
+		Parts:     []v1.Part{{Type: "text", Text: "Hot"}},
+		CreatedAt: time.Now(),
+	}, nil)
+
+	// Act
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
+		SessionId: sessionId,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out.Items, 2)
+	assert.Equal(t, "Hot", out.Items[0].Parts[0].Text)
+	assert.Equal(t, "Cold", out.Items[1].Parts[0].Text)
+}
+
+func TestListMessages_DedupsHotAndCold(t *testing.T) {
+	if len(os.Getenv("INTEGRATION")) > 0 {
+		t.Log("SKIPPING UNIT TEST")
+		return
+	}
+
+	// Arrange
+	p := v1mockpersister.NewV1Persister()
+	b := v1memorybuffer.NewV1Buffer()
+	d := v1mockdispatcher.NewV1Dispatcher()
+	f := v1mockfiler.NewV1Filer()
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
+
+	sessionId := uuid.New()
+	msgId := uuid.New()
+	now := time.Now()
+	ctx := context.Background()
+
+	msg := &v1.Message{
+		Id:        msgId,
+		SessionId: sessionId,
+		Role:      "user",
+		Parts:     []v1.Part{{Type: "text", Text: "Hello"}},
+		CreatedAt: now,
+	}
+	p.CreateMessageWithAssets(ctx, msg, nil)
+	b.Add(ctx, msg, nil)
+
+	// Act
+	out, err := s.ListMessages(ctx, v1session.ListMessagesInput{
+		SessionId: sessionId,
+		Limit:     10,
+	})
+	require.NoError(t, err)
+
+	// Assert
+	assert.Len(t, out.Items, 1)
+	assert.Equal(t, msgId, out.Items[0].Id)
 }
 
 func TestGetMessages_PaginationLogic(t *testing.T) {
@@ -267,7 +334,7 @@ func TestGetMessages_PaginationLogic(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -308,7 +375,7 @@ func TestGetMessages_EnrichesAssetsWithPresignedUrls(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -357,7 +424,7 @@ func TestGetMessages_ReturnsDescendingOrder(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	sessionId := uuid.New()
 	ctx := context.Background()
@@ -402,7 +469,7 @@ func TestGetMessages_ReturnsErrorOnInvalidCursor(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	ctx := context.Background()
 
@@ -430,7 +497,7 @@ func TestGetMessages_HandlesEmpty(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("my-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	ctx := context.Background()
 
@@ -458,7 +525,7 @@ func TestCreateSession_SupportsNullableSpace(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer()
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 
 	ctx := context.Background()
 
@@ -484,7 +551,7 @@ func TestFinishSession_Publishes(t *testing.T) {
 	b := v1memorybuffer.NewV1Buffer()
 	d := v1mockdispatcher.NewV1Dispatcher()
 	f := v1mockfiler.NewV1Filer(filer.WithContainer("test-bucket"))
-	s := v1session.NewV1Service(p, b, d, f, "q1", "q2", "q3")
+	s := v1session.NewV1Service(p, b, d, f, "q1", "q2")
 	sessionId := uuid.New()
 	ctx := context.Background()
 
